@@ -151,6 +151,7 @@ async def handle_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
             keyboard = [
                 [InlineKeyboardButton("💰 Нарахувати бонус", callback_data=f'bonus_user_{user.id}')],
+                [InlineKeyboardButton("📊 Історія нарахувань", callback_data=f'bonus_history_{user.id}')],
                 [InlineKeyboardButton("🔍 Пошук іншого", callback_data='admin_users_search')],
                 [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
             ]
@@ -492,3 +493,40 @@ async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Використовуйте: /removeadmin <telegram_id>")
     except Exception as e:
         await update.message.reply_text(f"❌ Помилка: {str(e)}")
+
+
+async def show_bonus_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показ історії нарахувань користувача"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    user_id = int(update.callback_query.data.split('_')[2])
+    
+    with Session() as session:
+        user = session.query(User).get(user_id)
+        if not user:
+            await update.callback_query.message.edit_text("❌ Користувача не знайдено")
+            return
+
+        # Отримуємо історію нарахувань
+        bonuses = session.query(ReferralBonus).filter_by(user_id=user_id).order_by(ReferralBonus.created_at.desc()).all()
+
+        if bonuses:
+            text = f"📊 ІСТОРІЯ НАРАХУВАНЬ\n\nКористувач: {user.phone_number}\n\n"
+            for bonus in bonuses:
+                text += (
+                    f"💰 {bonus.amount} грн\n"
+                    f"📝 {bonus.description}\n"
+                    f"📅 {bonus.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+                    "─────────────────\n"
+                )
+        else:
+            text = f"📊 ІСТОРІЯ НАРАХУВАНЬ\n\nКористувач: {user.phone_number}\n\nІсторія нарахувань порожня"
+
+        keyboard = [
+            [InlineKeyboardButton("💰 Нарахувати бонус", callback_data=f'bonus_user_{user_id}')],
+            [InlineKeyboardButton("◀️ Назад", callback_data=f'search_user_{user_id}')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.callback_query.message.edit_text(text, reply_markup=reply_markup)
