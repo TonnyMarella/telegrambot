@@ -33,11 +33,9 @@ redis_client = redis.Redis(host='localhost', port=6379, db=0)
 async def check_user_authorization(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Перевірка авторизації користувача"""
     user_id = update.effective_user.id
-    session = Session()
-    user = session.query(User).filter_by(telegram_id=user_id).first()
-    session.close()
-
-    return user
+    with Session() as session:
+        user = session.query(User).filter_by(telegram_id=user_id).first()
+        return user
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -105,19 +103,18 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     elif text == "💰 Додати бонус":
         await show_users_for_bonus(update, context)
     elif text == "📊 Статистика системи":
-        session = Session()
-        total_users = session.query(User).count()
-        active_users = session.query(User).filter(User.balance > 0).count()
-        total_balance = session.query(User).with_entities(User.balance).all()
-        total_balance_sum = sum([b[0] for b in total_balance if b[0]])
-        session.close()
+        with Session() as session:
+            total_users = session.query(User).count()
+            active_users = session.query(User).filter(User.balance > 0).count()
+            total_balance = session.query(User).with_entities(User.balance).all()
+            total_balance_sum = sum([b[0] for b in total_balance if b[0]])
 
-        await update.message.reply_text(
-            f"📊 СТАТИСТИКА СИСТЕМИ\n\n"
-            f"👥 Всього користувачів: {total_users}\n"
-            f"💰 Активних користувачів: {active_users}\n"
-            f"💵 Загальний баланс: {total_balance_sum} грн"
-        )
+            await update.message.reply_text(
+                f"📊 СТАТИСТИКА СИСТЕМИ\n\n"
+                f"👥 Всього користувачів: {total_users}\n"
+                f"💰 Активних користувачів: {active_users}\n"
+                f"💵 Загальний баланс: {total_balance_sum} грн"
+            )
     elif text == "👤 Режим користувача":
         # Перемикання в режим користувача
         keyboard = [
@@ -185,76 +182,71 @@ async def show_admin_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показ списку користувачів для адміна"""
-    session = Session()
-    users = session.query(User).limit(10).all()  # Показуємо перших 10 користувачів
+    with Session() as session:
+        users = session.query(User).limit(10).all()  # Показуємо перших 10 користувачів
 
-    if users:
-        text = "👥 СПИСОК КОРИСТУВАЧІВ:\n\n"
-        for user in users:
-            admin_mark = " 👑" if user.is_admin else ""
-            text += (
-                f"ID: {user.id}{admin_mark}\n"
-                f"📱 {user.phone_number}\n"
-                f"💰 Баланс: {user.balance} грн\n"
-                f"🔗 Код: {user.referral_code}\n"
-                f"📅 {user.created_at.strftime('%d.%m.%Y')}\n"
-                "─────────────────\n"
-            )
+        if users:
+            text = "👥 СПИСОК КОРИСТУВАЧІВ:\n\n"
+            for user in users:
+                admin_mark = " 👑" if user.is_admin else ""
+                text += (
+                    f"ID: {user.id}{admin_mark}\n"
+                    f"📱 {user.phone_number}\n"
+                    f"💰 Баланс: {user.balance} грн\n"
+                    f"🔗 Код: {user.referral_code}\n"
+                    f"📅 {user.created_at.strftime('%d.%m.%Y')}\n"
+                    "─────────────────\n"
+                )
 
-        keyboard = [[InlineKeyboardButton("💰 Додати бонус користувачу", callback_data='select_user_bonus')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(text, reply_markup=reply_markup)
-    else:
-        await update.message.reply_text("Користувачів не знайдено")
-
-    session.close()
+            keyboard = [[InlineKeyboardButton("💰 Додати бонус користувачу", callback_data='select_user_bonus')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(text, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text("Користувачів не знайдено")
 
 
 async def show_tour_requests_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показ заявок на тури для адміна"""
-    session = Session()
-    requests = session.query(TourRequest).filter_by(status='new').limit(10).all()
+    with Session() as session:
+        requests = session.query(TourRequest).filter_by(status='new').limit(10).all()
 
-    if requests:
-        text = "🏖 НОВІ ЗАЯВКИ НА ТУРИ:\n\n"
-        for req in requests:
-            user = session.query(User).get(req.user_id)
-            text += (
-                f"🆔 {req.id}\n"
-                f"👤 {user.phone_number}\n"
-                f"📝 {req.description[:100]}...\n"
-                f"📅 {req.created_at.strftime('%d.%m.%Y %H:%M')}\n"
-                "─────────────────\n"
-            )
-    else:
-        text = "📭 Нових заявок немає"
+        if requests:
+            text = "🏖 НОВІ ЗАЯВКИ НА ТУРИ:\n\n"
+            for req in requests:
+                user = session.query(User).get(req.user_id)
+                text += (
+                    f"🆔 {req.id}\n"
+                    f"👤 {user.phone_number}\n"
+                    f"📝 {req.description[:100]}...\n"
+                    f"📅 {req.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+                    "─────────────────\n"
+                )
+        else:
+            text = "📭 Нових заявок немає"
 
-    await update.message.reply_text(text)
-    session.close()
+        await update.message.reply_text(text)
 
 
 async def show_users_for_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показ користувачів для вибору додавання бонусу"""
-    session = Session()
-    users = session.query(User).filter(User.is_admin == False).limit(10).all()
+    with Session() as session:
+        users = session.query(User).filter(User.is_admin == False).limit(10).all()
 
-    if users:
-        keyboard = []
-        for user in users:
-            keyboard.append([InlineKeyboardButton(
-                f"{user.phone_number} (ID: {user.id})",
-                callback_data=f'bonus_{user.id}'
-            )])
+        if users:
+            keyboard = []
+            for user in users:
+                keyboard.append([InlineKeyboardButton(
+                    f"{user.phone_number} (ID: {user.id})",
+                    callback_data=f'bonus_{user.id}'
+                )])
 
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            "💰 Виберіть користувача для додавання бонусу:",
-            reply_markup=reply_markup
-        )
-    else:
-        await update.message.reply_text("Користувачів не знайдено")
-
-    session.close()
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text(
+                "💰 Виберіть користувача для додавання бонусу:",
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text("Користувачів не знайдено")
 
 
 def main():
