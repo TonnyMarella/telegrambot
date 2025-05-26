@@ -598,7 +598,7 @@ async def show_bonus_history(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         keyboard = [
             [InlineKeyboardButton("💰 Нарахувати бонус", callback_data=f'bonus_user_{user_id}')],
-            [InlineKeyboardButton("◀️ Назад", callback_data=f'search_user_{user_id}')]
+            [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
