@@ -148,7 +148,6 @@ async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = "Користувачів не знайдено"
 
     keyboard = [
-        [InlineKeyboardButton("🔄 Оновити", callback_data='admin_users_list')],
         [InlineKeyboardButton("🔍 Пошук", callback_data='admin_users_search')],
         [InlineKeyboardButton("📊 Статистика", callback_data='admin_users_stats')],
         [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
@@ -329,7 +328,6 @@ async def show_users_statistics(update: Update, context: ContextTypes.DEFAULT_TY
     )
 
     keyboard = [
-        [InlineKeyboardButton("🔄 Оновити", callback_data='admin_users_stats')],
         [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -673,7 +671,6 @@ async def show_tour_requests(update: Update, context: ContextTypes.DEFAULT_TYPE)
         for request in new_requests:
             keyboard.append([InlineKeyboardButton(f"Заявка #{request.id}", callback_data=f"tour_request_{request.id}")])
 
-        keyboard.append([InlineKeyboardButton("🔄 Оновити", callback_data="admin_tours_list")])
         keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_tours")])
 
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -745,15 +742,6 @@ async def complete_tour_request(update: Update, context: ContextTypes.DEFAULT_TY
                     'is_admin': user.is_admin
                 }
                 set_user_data(str(user.telegram_id), user_data)
-
-            try:
-                await context.bot.send_message(
-                    chat_id=user.telegram_id,
-                    text=f"✅ Ваша заявка #{request_id} оброблена!\n"
-                         f"Наш менеджер зв'яжеться з вами найближчим часом."
-                )
-            except Exception as e:
-                print(f"Помилка відправки повідомлення користувачу {user.telegram_id}: {str(e)}")
 
             await show_tour_requests(update, context)
 
