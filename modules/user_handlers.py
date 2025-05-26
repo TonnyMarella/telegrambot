@@ -53,7 +53,8 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [KeyboardButton("🔗 Моє посилання")],
                 [KeyboardButton("🏖 Підбір туру")],
                 [KeyboardButton("ℹ Про програму")],
-                [KeyboardButton("📞 Контакти")]
+                [KeyboardButton("📞 Контакти")],
+                [KeyboardButton("🛠 Адмін панель")]
             ]
             reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -63,7 +64,17 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=reply_markup
             )
         else:
-            await update.message.reply_text("Ви вже зареєстровані в системі!")
+            # Оновлюємо меню для існуючого користувача
+            keyboard = [
+                [KeyboardButton("📊 Моя статистика")],
+                [KeyboardButton("🔗 Моє посилання")],
+                [KeyboardButton("🏖 Підбір туру")],
+                [KeyboardButton("ℹ Про програму")],
+                [KeyboardButton("📞 Контакти")],
+                [KeyboardButton("🛠 Адмін панель")]
+            ]
+            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+            await update.message.reply_text("Ви вже зареєстровані в системі!", reply_markup=reply_markup)
 
 
 async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):

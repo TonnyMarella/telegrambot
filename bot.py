@@ -88,6 +88,14 @@ async def handle_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, t
             f"🔗 Ваше реферальне посилання:\n"
             f"t.me/MyNewArtembot?start={user.referral_code}"
         )
+    elif text == "🛠 Адмін панель":
+        # Перевіряємо чи користувач адмін
+        with Session() as session:
+            current_user = session.query(User).filter_by(telegram_id=user.telegram_id).first()
+            if current_user and current_user.is_admin:
+                await admin_panel(update, context)
+            else:
+                await update.message.reply_text("❌ У вас немає доступу до адмін-панелі!")
     elif context.user_data.get('waiting_for_tour_request'):
         await handle_tour_request(update, context)
     else:
@@ -144,22 +152,20 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user:
         # Користувач вже авторизований - показуємо відповідне меню
-        if user.is_admin:
-            await admin_panel(update, context)
-        else:
-            keyboard = [
-                [KeyboardButton("📊 Моя статистика")],
-                [KeyboardButton("🔗 Моє посилання")],
-                [KeyboardButton("🏖 Підбір туру")],
-                [KeyboardButton("ℹ Про програму")],
-                [KeyboardButton("📞 Контакти")]
-            ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        keyboard = [
+            [KeyboardButton("📊 Моя статистика")],
+            [KeyboardButton("🔗 Моє посилання")],
+            [KeyboardButton("🏖 Підбір туру")],
+            [KeyboardButton("ℹ Про програму")],
+            [KeyboardButton("📞 Контакти")],
+            [KeyboardButton("🛠 Адмін панель")]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-            await update.message.reply_text(
-                f"Вітаю! Ви вже авторизовані в системі ✅",
-                reply_markup=reply_markup
-            )
+        await update.message.reply_text(
+            f"Вітаю! Ви вже авторизовані в системі ✅",
+            reply_markup=reply_markup
+        )
     else:
         # Користувач не авторизований - запитуємо номер телефону
         await start(update, context)
