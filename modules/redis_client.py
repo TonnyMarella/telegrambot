@@ -108,4 +108,41 @@ def get_user_session(user_id: str) -> dict:
 def clear_user_session(user_id: str):
     """Очищає дані сесії користувача"""
     key = f"session:{user_id}"
-    redis_client.delete(key) 
+    redis_client.delete(key)
+
+
+def get_users_list(offset: int = 0, limit: int = 10) -> list:
+    """Отримати список користувачів з Redis"""
+    key = f"users_list:{offset}:{limit}"
+    data = redis_client.get(key)
+    return json.loads(data) if data else None
+
+
+def set_users_list(offset: int, limit: int, users_data: list, expire_seconds: int = 300):
+    """Зберегти список користувачів в Redis"""
+    key = f"users_list:{offset}:{limit}"
+    redis_client.setex(key, expire_seconds, json.dumps(users_data))
+
+
+def get_system_stats() -> dict:
+    """Отримати системну статистику з Redis"""
+    data = redis_client.get("system_stats")
+    return json.loads(data) if data else None
+
+
+def set_system_stats(stats: dict, expire_seconds: int = 600):
+    """Зберегти системну статистику в Redis"""
+    redis_client.setex("system_stats", expire_seconds, json.dumps(stats))
+
+
+def set_tour_request_data(request_id: int, request_data: dict, expire_seconds: int = 3600):
+    """Зберегти дані заявки в Redis"""
+    key = f"tour_request:{request_id}"
+    redis_client.setex(key, expire_seconds, json.dumps(request_data))
+
+
+def get_tour_request_data(request_id: int) -> dict:
+    """Отримати дані заявки з Redis"""
+    key = f"tour_request:{request_id}"
+    data = redis_client.get(key)
+    return json.loads(data) if data else None 
