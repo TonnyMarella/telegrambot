@@ -206,10 +206,27 @@ async def show_users_for_bonus(update: Update, context: ContextTypes.DEFAULT_TYP
     if not is_admin(update.effective_user.id):
         return
 
-    await update.message.reply_text(
-        "Введіть ID користувача або номер телефону:"
-    )
-    context.user_data['waiting_for_user_identifier'] = True
+    # Отримуємо ID користувача з callback_data
+    if hasattr(update, 'callback_query') and update.callback_query:
+        user_id = int(update.callback_query.data.split('_')[2])
+        with Session() as session:
+            user = session.query(User).get(user_id)
+            if user:
+                context.user_data['bonus_user_id'] = user.id
+                context.user_data['bonus_user_phone'] = user.phone_number
+                await update.callback_query.message.edit_text(
+                    f"Знайдено: {user.phone_number}\n"
+                    f"Поточний баланс: {user.balance} грн\n\n"
+                    f"Введіть суму для нарахування:"
+                )
+                context.user_data['waiting_for_bonus_amount'] = True
+            else:
+                await update.callback_query.message.edit_text("❌ Користувача не знайдено")
+    else:
+        await update.message.reply_text(
+            "Введіть ID користувача або номер телефону:"
+        )
+        context.user_data['waiting_for_user_identifier'] = True
 
 
 async def handle_user_identifier(update: Update, context: ContextTypes.DEFAULT_TYPE):

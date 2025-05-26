@@ -216,6 +216,7 @@ def main():
     application.add_handler(CallbackQueryHandler(search_user, pattern='^admin_users_search$'))
     application.add_handler(CallbackQueryHandler(show_users_statistics, pattern='^admin_users_stats$'))
     application.add_handler(CallbackQueryHandler(show_users, pattern='^admin_users$'))
+    application.add_handler(CallbackQueryHandler(show_users_for_bonus, pattern='^bonus_user_\d+$'))
 
     # Запуск бота
     application.run_polling()
