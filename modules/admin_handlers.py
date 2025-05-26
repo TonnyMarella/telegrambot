@@ -414,8 +414,8 @@ async def show_tour_requests(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         # Додаємо кнопки навігації
         keyboard.extend([
-            [InlineKeyboardButton("🔄 Оновити", callback_data='admin_tours')],
-            [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
+            [InlineKeyboardButton("🔄 Оновити", callback_data='admin_tours_list')],
+            [InlineKeyboardButton("◀️ Назад", callback_data='admin_tours')]
         ])
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -452,7 +452,7 @@ async def show_tour_request_details(update: Update, context: ContextTypes.DEFAUL
         if request.status == 'new':
             keyboard.append([InlineKeyboardButton("✅ Завершити обробку", callback_data=f'complete_request_{request.id}')])
         keyboard.extend([
-            [InlineKeyboardButton("◀️ Назад до списку", callback_data='admin_tours')]
+            [InlineKeyboardButton("◀️ Назад до списку", callback_data='admin_tours_list')]
         ])
         reply_markup = InlineKeyboardMarkup(keyboard)
 
