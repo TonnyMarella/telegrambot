@@ -44,6 +44,21 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 phone_number=phone_number,
                 referral_code=referral_code
             )
+
+            # Перевіряємо наявність реферального коду
+            if 'referral_code' in context.user_data:
+                referrer = session.query(User).filter_by(referral_code=context.user_data['referral_code']).first()
+                if referrer:
+                    user.referred_by = referrer.id
+                    # Нараховуємо бонус рефереру
+                    referrer.balance += 100
+                    bonus = ReferralBonus(
+                        user_id=referrer.id,
+                        amount=100,
+                        description=f"Бонус за реєстрацію користувача {phone_number}"
+                    )
+                    session.add(bonus)
+
             session.add(user)
             session.commit()
 
@@ -58,11 +73,13 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-            await update.message.reply_text(
-                "Дякую! Ви зареєстровані ✅\n"
-                "Ваше реферальне посилання: t.me/yourbot?start=" + referral_code,
-                reply_markup=reply_markup
-            )
+            # Формуємо повідомлення про реєстрацію
+            message = "Дякую! Ви зареєстровані ✅\n"
+            if user.referred_by:
+                message += "Ваш друг отримав +100 грн за ваше запрошення!\n"
+            message += f"Ваше реферальне посилання: t.me/MyNewArtembot?start={referral_code}"
+
+            await update.message.reply_text(message, reply_markup=reply_markup)
         else:
             # Оновлюємо меню для існуючого користувача
             keyboard = [

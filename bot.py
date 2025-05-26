@@ -147,7 +147,11 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробник команди /start з перевіркою авторизації"""
+    """Обробник команди /start з перевіркою авторизації та реферального коду"""
+    # Отримуємо реферальний код з параметрів команди
+    args = context.args
+    referral_code = args[0] if args else None
+
     user = await check_user_authorization(update, context)
 
     if user:
@@ -167,7 +171,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup
         )
     else:
-        # Користувач не авторизований - запитуємо номер телефону
+        # Користувач не авторизований - зберігаємо реферальний код в контексті
+        if referral_code:
+            context.user_data['referral_code'] = referral_code
+            await update.message.reply_text(f"Вітаю! Ви перейшли за реферальним посиланням.\n")
+        # Показуємо меню реєстрації
         await start(update, context)
 
 
