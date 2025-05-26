@@ -2,6 +2,7 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from .models import Session, User, ReferralBonus, TourRequest
+from sqlalchemy import func
 
 
 def is_admin(user_id: int) -> bool:
@@ -19,7 +20,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Показуємо адмінське меню з кнопками
     keyboard = [
-        [KeyboardButton("👥 Користувачі"), KeyboardButton("📋 Заявки на тури")],
+        [KeyboardButton("👥 Управління користувачами"), KeyboardButton("📋 Заявки на тури")],
         [KeyboardButton("💰 Нарахування балів"), KeyboardButton("📊 Статистика системи")],
         [KeyboardButton("👤 Режим користувача")]
     ]
@@ -34,12 +35,32 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показ списку користувачів"""
+    """Показ меню управління користувачами"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    keyboard = [
+        [InlineKeyboardButton("📋 Перегляд всіх користувачів", callback_data='admin_users_list')],
+        [InlineKeyboardButton("🔍 Пошук користувача", callback_data='admin_users_search')],
+        [InlineKeyboardButton("📊 Статистика користувачів", callback_data='admin_users_stats')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    text = "👥 УПРАВЛІННЯ КОРИСТУВАЧАМИ\n\nВиберіть потрібну опцію:"
+
+    if hasattr(update, 'callback_query') and update.callback_query:
+        await update.callback_query.message.edit_text(text, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup)
+
+
+async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показ списку всіх користувачів"""
     if not is_admin(update.effective_user.id):
         return
 
     with Session() as session:
-        users = session.query(User).limit(10).all()  # Показуємо перших 10 користувачів
+        users = session.query(User).limit(10).all()
 
         if users:
             text = "👥 СПИСОК КОРИСТУВАЧІВ:\n\n"
@@ -54,7 +75,12 @@ async def show_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "─────────────────\n"
                 )
 
-            keyboard = [[InlineKeyboardButton("💰 Нарахування балів користувачу", callback_data='select_user_bonus')]]
+            keyboard = [
+                [InlineKeyboardButton("🔄 Оновити", callback_data='admin_users_list')],
+                [InlineKeyboardButton("🔍 Пошук", callback_data='admin_users_search')],
+                [InlineKeyboardButton("📊 Статистика", callback_data='admin_users_stats')],
+                [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             if hasattr(update, 'callback_query') and update.callback_query:
@@ -67,6 +93,112 @@ async def show_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.callback_query.message.edit_text(message)
             else:
                 await update.message.reply_text(message)
+
+
+async def search_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Початок процесу пошуку користувача"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    text = "Введіть ID користувача або номер телефону для пошуку:\nДля скасування напишіть 'вийти'"
+    
+    if hasattr(update, 'callback_query') and update.callback_query:
+        await update.callback_query.message.edit_text(text)
+    else:
+        await update.message.reply_text(text)
+    
+    context.user_data['waiting_for_user_search'] = True
+
+
+async def handle_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка пошуку користувача"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    if not context.user_data.get('waiting_for_user_search'):
+        return
+
+    identifier = update.message.text.strip()
+    
+    if identifier.lower() in ['вийти', 'exit', 'cancel', 'скасувати']:
+        context.user_data.pop('waiting_for_user_search', None)
+        await update.message.reply_text("❌ Пошук скасовано")
+        return
+
+    with Session() as session:
+        user_id = int(identifier)
+        user = session.query(User).get(user_id) or session.query(User).filter_by(phone_number=identifier).first()
+
+        if user:
+            # Отримуємо статистику користувача
+            total_referrals = session.query(User).filter_by(referred_by=user.id).count()
+            total_bonuses = session.query(ReferralBonus).filter_by(user_id=user.id).count()
+            total_bonus_amount = session.query(ReferralBonus).filter_by(user_id=user.id).with_entities(
+                func.sum(ReferralBonus.amount)).scalar() or 0
+
+            text = (
+                f"👤 ІНФОРМАЦІЯ ПРО КОРИСТУВАЧА\n\n"
+                f"🆔 ID: {user.id}\n"
+                f"📱 Телефон: {user.phone_number}\n"
+                f"💰 Баланс: {user.balance} грн\n"
+                f"🔗 Реферальний код: {user.referral_code}\n"
+                f"📅 Дата реєстрації: {user.created_at.strftime('%d.%m.%Y')}\n"
+                f"👥 Запрошено рефералів: {total_referrals}\n"
+                f"🎁 Отримано бонусів: {total_bonuses}\n"
+                f"💵 Загальна сума бонусів: {total_bonus_amount} грн\n"
+                f"{'👑 Адміністратор' if user.is_admin else ''}"
+            )
+
+            keyboard = [
+                [InlineKeyboardButton("💰 Нарахувати бонус", callback_data=f'bonus_user_{user.id}')],
+                [InlineKeyboardButton("🔍 Пошук іншого", callback_data='admin_users_search')],
+                [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await update.message.reply_text(text, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(
+                "❌ Користувача не знайдено.\n"
+                "Спробуйте ще раз або напишіть 'вийти' для скасування:"
+            )
+
+    context.user_data.pop('waiting_for_user_search', None)
+
+
+async def show_users_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показ загальної статистики користувачів"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    with Session() as session:
+        total_users = session.query(User).count()
+        active_users = session.query(User).filter(User.balance > 0).count()
+        total_balance = session.query(func.sum(User.balance)).scalar() or 0
+        total_referrals = session.query(User).filter(User.referred_by.isnot(None)).count()
+        total_bonuses = session.query(ReferralBonus).count()
+        total_bonus_amount = session.query(func.sum(ReferralBonus.amount)).scalar() or 0
+
+        text = (
+            "📊 СТАТИСТИКА КОРИСТУВАЧІВ\n\n"
+            f"👥 Всього користувачів: {total_users}\n"
+            f"✅ Активних користувачів: {active_users}\n"
+            f"💰 Загальний баланс: {total_balance} грн\n"
+            f"👥 Запрошено рефералів: {total_referrals}\n"
+            f"🎁 Нараховано бонусів: {total_bonuses}\n"
+            f"💵 Загальна сума бонусів: {total_bonus_amount} грн"
+        )
+
+        keyboard = [
+            [InlineKeyboardButton("🔄 Оновити", callback_data='admin_users_stats')],
+            [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        if hasattr(update, 'callback_query') and update.callback_query:
+            await update.callback_query.message.edit_text(text, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(text, reply_markup=reply_markup)
 
 
 async def show_users_for_bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -263,7 +395,7 @@ async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # Сповіщаємо нового адміністратора та оновлюємо його меню
                 try:
                     keyboard = [
-                        [KeyboardButton("👥 Користувачі"), KeyboardButton("📋 Заявки на тури")],
+                        [KeyboardButton("👥 Управління користувачами"), KeyboardButton("📋 Заявки на тури")],
                         [KeyboardButton("💰 Нарахування балів"), KeyboardButton("📊 Статистика системи")],
                         [KeyboardButton("👤 Режим користувача")]
                     ]

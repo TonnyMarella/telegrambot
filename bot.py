@@ -13,7 +13,8 @@ from modules.user_handlers import (
 from modules.admin_handlers import (
     admin_panel, show_users, show_users_for_bonus,
     handle_user_identifier, handle_bonus_amount, handle_bonus_description,
-    show_tour_requests, set_admin, remove_admin
+    show_tour_requests, set_admin, remove_admin,
+    show_users_list, search_user, handle_user_search, show_users_statistics
 )
 
 # Завантаження змінних середовища
@@ -53,6 +54,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Перевіряємо чи очікуємо введення опису бонусу
     if context.user_data.get('waiting_for_bonus_description'):
         await handle_bonus_description(update, context)
+        return
+
+    # Перевіряємо чи очікуємо пошук користувача
+    if context.user_data.get('waiting_for_user_search'):
+        await handle_user_search(update, context)
         return
 
     # Перевіряємо авторизацію користувача
@@ -114,7 +120,7 @@ async def handle_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, t
 
 async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, user):
     """Обробка текстових повідомлень для адміністраторів"""
-    if text == "👥 Користувачі":
+    if text == "👥 Управління користувачами":
         await show_users(update, context)
     elif text == "📋 Заявки на тури":
         await show_tour_requests(update, context)
@@ -204,6 +210,12 @@ def main():
     application.add_handler(CommandHandler("admin", admin_panel))
     application.add_handler(CommandHandler("setadmin", set_admin))
     application.add_handler(CommandHandler("removeadmin", remove_admin))
+
+    # Обробники callback-запитів
+    application.add_handler(CallbackQueryHandler(show_users_list, pattern='^admin_users_list$'))
+    application.add_handler(CallbackQueryHandler(search_user, pattern='^admin_users_search$'))
+    application.add_handler(CallbackQueryHandler(show_users_statistics, pattern='^admin_users_stats$'))
+    application.add_handler(CallbackQueryHandler(show_users, pattern='^admin_users$'))
 
     # Запуск бота
     application.run_polling()
