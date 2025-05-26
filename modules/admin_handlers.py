@@ -629,3 +629,90 @@ async def show_bonus_history(update: Update, context: ContextTypes.DEFAULT_TYPE)
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.callback_query.message.edit_text(text, reply_markup=reply_markup)
+
+
+async def show_tour_requests_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показ меню роботи з заявками"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    keyboard = [
+        [InlineKeyboardButton("📋 Перегляд всіх заявок", callback_data='admin_tours_list')],
+        [InlineKeyboardButton("🔍 Пошук заявки", callback_data='admin_tours_search')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    text = "🏖 УПРАВЛІННЯ ЗАЯВКАМИ\n\nВиберіть потрібну опцію:"
+
+    if hasattr(update, 'callback_query') and update.callback_query:
+        await update.callback_query.message.edit_text(text, reply_markup=reply_markup)
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup)
+
+
+async def search_tour_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Початок процесу пошуку заявки"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    text = "Введіть ID заявки для пошуку:\nДля скасування напишіть 'вийти'"
+    
+    if hasattr(update, 'callback_query') and update.callback_query:
+        await update.callback_query.message.edit_text(text)
+    else:
+        await update.message.reply_text(text)
+    
+    context.user_data['waiting_for_tour_search'] = True
+
+
+async def handle_tour_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка пошуку заявки"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    if not context.user_data.get('waiting_for_tour_search'):
+        return
+
+    identifier = update.message.text.strip()
+    
+    if identifier.lower() in ['вийти', 'exit', 'cancel', 'скасувати']:
+        context.user_data.pop('waiting_for_tour_search', None)
+        await update.message.reply_text("❌ Пошук скасовано")
+        return
+
+    try:
+        request_id = int(identifier)
+        with Session() as session:
+            request = session.query(TourRequest).get(request_id)
+            if request:
+                user = session.query(User).get(request.user_id)
+                text = (
+                    f"🏖 ДЕТАЛІ ЗАЯВКИ #{request.id}\n\n"
+                    f"👤 Користувач: {user.phone_number if user else 'Невідомий'}\n"
+                    f"📅 Створено: {request.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+                    f"📝 Опис:\n{request.description}\n\n"
+                    f"Статус: {'✅ Опрацьовано' if request.status == 'end' else '⏳ В обробці'}"
+                )
+
+                keyboard = []
+                if request.status == 'new':
+                    keyboard.append([InlineKeyboardButton("✅ Завершити обробку", callback_data=f'complete_request_{request.id}')])
+                keyboard.extend([
+                    [InlineKeyboardButton("🔍 Пошук іншої", callback_data='admin_tours_search')],
+                    [InlineKeyboardButton("◀️ Назад", callback_data='admin_tours')]
+                ])
+                reply_markup = InlineKeyboardMarkup(keyboard)
+
+                await update.message.reply_text(text, reply_markup=reply_markup)
+            else:
+                await update.message.reply_text(
+                    "❌ Заявку не знайдено.\n"
+                    "Спробуйте ще раз або напишіть 'вийти' для скасування:"
+                )
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Будь ласка, введіть коректний ID заявки (тільки число)!\n"
+            "Або напишіть 'вийти' для скасування:"
+        )
+
+    context.user_data.pop('waiting_for_tour_search', None)

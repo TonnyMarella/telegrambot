@@ -15,7 +15,8 @@ from modules.admin_handlers import (
     handle_user_identifier, handle_bonus_amount, handle_bonus_description,
     show_tour_requests, set_admin, remove_admin,
     show_users_list, search_user, handle_user_search, show_users_statistics,
-    show_bonus_history, show_tour_request_details, complete_tour_request
+    show_bonus_history, show_tour_request_details, complete_tour_request,
+    show_tour_requests_menu, search_tour_request, handle_tour_search
 )
 
 # Завантаження змінних середовища
@@ -60,6 +61,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Перевіряємо чи очікуємо пошук користувача
     if context.user_data.get('waiting_for_user_search'):
         await handle_user_search(update, context)
+        return
+
+    # Перевіряємо чи очікуємо пошук заявки
+    if context.user_data.get('waiting_for_tour_search'):
+        await handle_tour_search(update, context)
         return
 
     # Перевіряємо авторизацію користувача
@@ -124,7 +130,7 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if text == "👥 Управління користувачами":
         await show_users(update, context)
     elif text == "📋 Заявки на тури":
-        await show_tour_requests(update, context)
+        await show_tour_requests_menu(update, context)
     elif text == "💰 Додати бонус":
         await show_users_for_bonus(update, context)
     elif text == "📊 Статистика системи":
@@ -219,6 +225,9 @@ def main():
     application.add_handler(CallbackQueryHandler(show_users, pattern='^admin_users$'))
     application.add_handler(CallbackQueryHandler(show_users_for_bonus, pattern='^bonus_user_\d+$'))
     application.add_handler(CallbackQueryHandler(show_bonus_history, pattern='^bonus_history_\d+$'))
+    application.add_handler(CallbackQueryHandler(show_tour_requests, pattern='^admin_tours_list$'))
+    application.add_handler(CallbackQueryHandler(search_tour_request, pattern='^admin_tours_search$'))
+    application.add_handler(CallbackQueryHandler(show_tour_requests_menu, pattern='^admin_tours$'))
     application.add_handler(CallbackQueryHandler(show_tour_request_details, pattern='^tour_request_\d+$'))
     application.add_handler(CallbackQueryHandler(complete_tour_request, pattern='^complete_request_\d+$'))
 
