@@ -168,6 +168,21 @@ async def handle_tour_request(update: Update, context: ContextTypes.DEFAULT_TYPE
                 session.add(tour_request)
                 session.commit()
 
+                # Відправляємо повідомлення адміністраторам
+                admins = session.query(User).filter_by(is_admin=True).all()
+                for admin in admins:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=admin.telegram_id,
+                            text=f"🔔 НОВА ЗАЯВКА НА ТУР\n\n"
+                                 f"👤 Користувач: {user.phone_number}\n"
+                                 f"📝 Опис:\n{update.message.text}\n\n"
+                                 f"🆔 ID заявки: {tour_request.id}\n"
+                                 f"📅 Створено: {tour_request.created_at.strftime('%d.%m.%Y %H:%M')}"
+                        )
+                    except Exception as e:
+                        print(f"Помилка відправки повідомлення адміну {admin.telegram_id}: {str(e)}")
+
                 await update.message.reply_text(
                     "Дякую! Ваша заявка передана менеджеру.\n"
                     "З вами зв'яжуться протягом години! ✅"
