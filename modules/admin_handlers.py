@@ -76,7 +76,7 @@ def get_users_from_cache_or_db(limit=10, offset=0):
             if not user_data:
                 # Зберігаємо дані в Redis
                 user_data = {
-                    'id': user.id,
+                    'id': user.id,  # Додаємо ID користувача
                     'telegram_id': str(user.telegram_id),
                     'phone_number': user.phone_number,
                     'referral_code': user.referral_code,
@@ -86,6 +86,11 @@ def get_users_from_cache_or_db(limit=10, offset=0):
                     'created_at': user.created_at.strftime('%d.%m.%Y')
                 }
                 set_user_data(str(user.telegram_id), user_data)
+            else:
+                # Якщо дані є в Redis, але немає ID - оновлюємо їх
+                if 'id' not in user_data:
+                    user_data['id'] = user.id
+                    set_user_data(str(user.telegram_id), user_data)
 
             # Отримуємо актуальний баланс з Redis
             balance = get_user_balance(str(user.telegram_id)) or user.balance
@@ -132,7 +137,7 @@ async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
             balance = user_data.get('balance', 0)
 
             text += (
-                f"ID: {user_data.get('id')}{admin_mark}\n"
+                f"ID: {user_data['id']}{admin_mark}\n"
                 f"📱 {user_data['phone_number']}\n"
                 f"💰 Баланс: {balance} грн\n"
                 f"🔗 Код: {user_data['referral_code']}\n"

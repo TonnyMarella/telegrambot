@@ -145,4 +145,10 @@ def get_tour_request_data(request_id: int) -> dict:
     """Отримати дані заявки з Redis"""
     key = f"tour_request:{request_id}"
     data = redis_client.get(key)
-    return json.loads(data) if data else None 
+    return json.loads(data) if data else None
+
+
+def clear_all_redis_data():
+    """Повністю очистити всі дані в Redis"""
+    redis_client.flushall()
+    print("✅ Redis очищено успішно") 
