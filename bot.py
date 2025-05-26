@@ -15,7 +15,7 @@ from modules.admin_handlers import (
     handle_user_identifier, handle_bonus_amount, handle_bonus_description,
     show_tour_requests, set_admin, remove_admin,
     show_users_list, search_user, handle_user_search, show_users_statistics,
-    show_bonus_history
+    show_bonus_history, show_tour_request_details, complete_tour_request
 )
 
 # Завантаження змінних середовища
@@ -219,6 +219,8 @@ def main():
     application.add_handler(CallbackQueryHandler(show_users, pattern='^admin_users$'))
     application.add_handler(CallbackQueryHandler(show_users_for_bonus, pattern='^bonus_user_\d+$'))
     application.add_handler(CallbackQueryHandler(show_bonus_history, pattern='^bonus_history_\d+$'))
+    application.add_handler(CallbackQueryHandler(show_tour_request_details, pattern='^tour_request_\d+$'))
+    application.add_handler(CallbackQueryHandler(complete_tour_request, pattern='^complete_request_\d+$'))
 
     # Запуск бота
     application.run_polling()
