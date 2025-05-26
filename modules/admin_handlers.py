@@ -3,6 +3,10 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Keyboar
 from telegram.ext import ContextTypes
 from .models import Session, User, ReferralBonus, TourRequest
 from sqlalchemy import func
+from .redis_client import (
+    get_user_data, get_tour_request_status,
+    set_tour_request_status, get_recent_requests
+)
 
 
 def is_admin(user_id: int) -> bool:
@@ -365,133 +369,103 @@ async def handle_bonus_description(update: Update, context: ContextTypes.DEFAULT
 
 
 async def show_tour_requests(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показ заявок на підбір турів"""
-    if not is_admin(update.effective_user.id):
-        return
-
+    """Показати список заявок на тури"""
     with Session() as session:
         # Отримуємо нові заявки
         new_requests = session.query(TourRequest).filter_by(status='new').order_by(TourRequest.created_at.desc()).all()
-        # Отримуємо опрацьовані заявки
+        
+        # Отримуємо оброблені заявки
         processed_requests = session.query(TourRequest).filter_by(status='end').order_by(TourRequest.created_at.desc()).limit(5).all()
 
-        text = "🏖 ЗАЯВКИ НА ТУРИ\n\n"
+        text = "📋 ЗАЯВКИ НА ТУРИ\n\n"
         
         if new_requests:
-            text += "📥 НОВІ ЗАЯВКИ:\n\n"
-            for req in new_requests:
-                user = session.query(User).get(req.user_id)
-                text += (
-                    f"🆔 {req.id}\n"
-                    f"👤 {user.phone_number if user else 'Невідомий'}\n"
-                    f"📝 {req.description[:100]}{'...' if len(req.description) > 100 else ''}\n"
-                    f"📅 {req.created_at.strftime('%d.%m.%Y %H:%M')}\n"
-                    "─────────────────\n"
-                )
+            text += "🆕 НОВІ ЗАЯВКИ:\n"
+            for request in new_requests:
+                # Перевіряємо статус в Redis
+                status = get_tour_request_status(request.id) or 'new'
+                user = session.query(User).get(request.user_id)
+                text += f"├── ID: {request.id}\n"
+                text += f"├── Клієнт: {user.phone_number}\n"
+                text += f"├── Статус: {status}\n"
+                text += f"└── Створено: {request.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
         else:
-            text += "📭 Нових заявок немає\n\n"
+            text += "🆕 Нових заявок немає\n\n"
 
         if processed_requests:
-            text += "\n✅ ОПРАЦЬОВАНІ ЗАЯВКИ:\n\n"
-            for req in processed_requests:
-                user = session.query(User).get(req.user_id)
-                text += (
-                    f"🆔 {req.id}\n"
-                    f"👤 {user.phone_number if user else 'Невідомий'}\n"
-                    f"📝 {req.description[:100]}{'...' if len(req.description) > 100 else ''}\n"
-                    f"📅 {req.created_at.strftime('%d.%m.%Y %H:%M')}\n"
-                    "─────────────────\n"
-                )
+            text += "✅ ОБРОБЛЕНІ ЗАЯВКИ:\n"
+            for request in processed_requests:
+                # Перевіряємо статус в Redis
+                status = get_tour_request_status(request.id) or 'end'
+                user = session.query(User).get(request.user_id)
+                text += f"├── ID: {request.id}\n"
+                text += f"├── Клієнт: {user.phone_number}\n"
+                text += f"├── Статус: {status}\n"
+                text += f"└── Створено: {request.created_at.strftime('%d.%m.%Y %H:%M')}\n\n"
+        else:
+            text += "✅ Оброблених заявок немає\n\n"
 
         keyboard = []
-        # Додаємо кнопки для нових заявок
-        for req in new_requests:
-            keyboard.append([InlineKeyboardButton(f"📋 Заявка #{req.id}", callback_data=f'tour_request_{req.id}')])
+        for request in new_requests:
+            keyboard.append([InlineKeyboardButton(f"Заявка #{request.id}", callback_data=f"tour_request_{request.id}")])
         
-        # Додаємо кнопки для опрацьованих заявок
-        for req in processed_requests:
-            keyboard.append([InlineKeyboardButton(f"✅ Заявка #{req.id}", callback_data=f'tour_request_{req.id}')])
+        keyboard.append([InlineKeyboardButton("🔄 Оновити", callback_data="admin_tours_list")])
+        keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_tours")])
         
-        # Додаємо кнопки навігації
-        keyboard.extend([
-            [InlineKeyboardButton("🔄 Оновити", callback_data='admin_tours_list')],
-            [InlineKeyboardButton("◀️ Назад", callback_data='admin_tours')]
-        ])
         reply_markup = InlineKeyboardMarkup(keyboard)
-
-        if hasattr(update, 'callback_query') and update.callback_query:
-            await update.callback_query.message.edit_text(text, reply_markup=reply_markup)
-        else:
-            await update.message.reply_text(text, reply_markup=reply_markup)
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
 
 
 async def show_tour_request_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показ деталей заявки на тур"""
-    if not is_admin(update.effective_user.id):
-        return
-
+    """Показати деталі заявки на тур"""
     request_id = int(update.callback_query.data.split('_')[2])
     
     with Session() as session:
         request = session.query(TourRequest).get(request_id)
-        if not request:
-            await update.callback_query.message.edit_text("❌ Заявку не знайдено")
-            return
+        if request:
+            user = session.query(User).get(request.user_id)
+            # Перевіряємо статус в Redis
+            status = get_tour_request_status(request.id) or request.status
+            
+            text = f"📋 ДЕТАЛІ ЗАЯВКИ #{request.id}\n\n"
+            text += f"👤 Клієнт: {user.phone_number}\n"
+            text += f"📝 Опис:\n{request.description}\n\n"
+            text += f"📅 Створено: {request.created_at.strftime('%d.%m.%Y %H:%M')}\n"
+            text += f"📊 Статус: {status}\n"
 
-        user = session.query(User).get(request.user_id)
-        
-        text = (
-            f"🏖 ДЕТАЛІ ЗАЯВКИ #{request.id}\n\n"
-            f"👤 Користувач: {user.phone_number if user else 'Невідомий'}\n"
-            f"📅 Створено: {request.created_at.strftime('%d.%m.%Y %H:%M')}\n"
-            f"📝 Опис:\n{request.description}\n\n"
-            f"Статус: {'✅ Опрацьовано' if request.status == 'end' else '⏳ В обробці'}"
-        )
-
-        keyboard = []
-        if request.status == 'new':
-            keyboard.append([InlineKeyboardButton("✅ Завершити обробку", callback_data=f'complete_request_{request.id}')])
-        keyboard.extend([
-            [InlineKeyboardButton("◀️ Назад до списку", callback_data='admin_tours_list')]
-        ])
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await update.callback_query.message.edit_text(text, reply_markup=reply_markup)
+            keyboard = []
+            if status == 'new':
+                keyboard.append([InlineKeyboardButton("✅ Завершити обробку", callback_data=f"complete_request_{request.id}")])
+            keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_tours_list")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup)
 
 
 async def complete_tour_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Завершення обробки заявки на тур"""
-    if not is_admin(update.effective_user.id):
-        return
-
+    """Завершити обробку заявки на тур"""
     request_id = int(update.callback_query.data.split('_')[2])
     
     with Session() as session:
         request = session.query(TourRequest).get(request_id)
-        if not request:
-            await update.callback_query.message.edit_text("❌ Заявку не знайдено")
-            return
-
-        if request.status == 'end':
-            await update.callback_query.message.edit_text("❌ Заявка вже опрацьована")
-            return
-
-        # Змінюємо статус заявки
-        request.status = 'end'
-        session.commit()
-
-        # Повідомляємо користувача
-        try:
-            await context.bot.send_message(
-                chat_id=request.user_id,
-                text=f"✅ Ваша заявка #{request.id} на підбір туру опрацьована!\n"
-                     f"Наш менеджер зв'яжеться з вами найближчим часом."
-            )
-        except Exception as e:
-            print(f"Помилка відправки повідомлення користувачу {request.user_id}: {str(e)}")
-
-        # Повертаємось до списку заявок
-        await show_tour_requests(update, context)
+        if request and request.status == 'new':
+            request.status = 'end'
+            session.commit()
+            
+            # Оновлюємо статус в Redis
+            set_tour_request_status(request_id, 'end')
+            
+            user = session.query(User).get(request.user_id)
+            try:
+                await context.bot.send_message(
+                    chat_id=user.telegram_id,
+                    text=f"✅ Ваша заявка #{request_id} оброблена!\n"
+                         f"Наш менеджер зв'яжеться з вами найближчим часом."
+                )
+            except Exception as e:
+                print(f"Помилка відправки повідомлення користувачу {user.telegram_id}: {str(e)}")
+            
+            await show_tour_requests(update, context)
 
 
 async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):

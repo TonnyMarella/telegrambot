@@ -5,7 +5,10 @@ from telegram.ext import ContextTypes
 from .models import Session, User, ReferralBonus, TourRequest
 from .redis_client import (
     set_user_data, get_user_data, set_referral_code,
-    get_referral_user_id, increment_user_balance
+    get_referral_user_id, increment_user_balance,
+    get_user_balance, set_tour_request_status,
+    get_tour_request_status, add_to_recent_requests,
+    get_recent_requests
 )
 
 
@@ -188,70 +191,99 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показати статистику користувача"""
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
+    
+    # Спочатку перевіряємо дані в Redis
+    user_data = get_user_data(user_id)
+    
     with Session() as session:
-        user = session.query(User).filter_by(telegram_id=str(user_id)).first()
+        if not user_data:
+            # Якщо даних немає в Redis, беремо з бази даних
+            user = session.query(User).filter_by(telegram_id=user_id).first()
+            if user:
+                # Зберігаємо дані в Redis
+                user_data = {
+                    'telegram_id': user_id,
+                    'phone_number': user.phone_number,
+                    'referral_code': user.referral_code,
+                    'referred_by': user.referred_by,
+                    'balance': user.balance,
+                    'is_admin': user.is_admin
+                }
+                set_user_data(user_id, user_data)
+            else:
+                await update.message.reply_text("Спочатку потрібно зареєструватися!")
+                return
 
-        if user:
-            # Отримання статистики рефералів
-            first_level = session.query(User).filter_by(referred_by=user.id).count()
-            second_level = session.query(User).filter(
-                User.referred_by.in_(
-                    session.query(User.id).filter_by(referred_by=user.id)
-                )
-            ).count()
-            third_level = session.query(User).filter(
-                User.referred_by.in_(
-                    session.query(User.id).filter(
-                        User.referred_by.in_(
-                            session.query(User.id).filter_by(referred_by=user.id)
-                        )
+        # Отримання статистики рефералів
+        first_level = session.query(User).filter_by(referred_by=user_data.get('id')).count()
+        second_level = session.query(User).filter(
+            User.referred_by.in_(
+                session.query(User.id).filter_by(referred_by=user_data.get('id'))
+            )
+        ).count()
+        third_level = session.query(User).filter(
+            User.referred_by.in_(
+                session.query(User.id).filter(
+                    User.referred_by.in_(
+                        session.query(User.id).filter_by(referred_by=user_data.get('id'))
                     )
                 )
-            ).count()
-
-            stats_text = (
-                f"📊 ВАША СТАТИСТИКА\n"
-                f"💰 Поточний баланс: {user.balance} грн\n\n"
-                f"👥 ВАШІ РЕФЕРАЛИ:\n"
-                f"├── 1-й рівень: {first_level} осіб ({first_level * 800} грн)\n"
-                f"├── 2-й рівень: {second_level} осіб ({second_level * 400} грн)\n"
-                f"└── 3-й рівень: {third_level} осіб ({third_level * 200} грн)\n\n"
-                f"🔗 Ваше посилання:\n"
-                f"t.me/yourbot?start={user.referral_code}"
             )
+        ).count()
 
-            keyboard = [[InlineKeyboardButton("📤 Поділитися посиланням", url=f"https://t.me/yourbot?start={user.referral_code}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+        # Отримуємо баланс з Redis
+        balance = get_user_balance(user_id)
 
-            await update.message.reply_text(stats_text, reply_markup=reply_markup)
-        else:
-            await update.message.reply_text("Спочатку потрібно зареєструватися!")
+        stats_text = (
+            f"📊 ВАША СТАТИСТИКА\n"
+            f"💰 Поточний баланс: {balance} грн\n\n"
+            f"👥 ВАШІ РЕФЕРАЛИ:\n"
+            f"├── 1-й рівень: {first_level} осіб ({first_level * 800} грн)\n"
+            f"├── 2-й рівень: {second_level} осіб ({second_level * 400} грн)\n"
+            f"└── 3-й рівень: {third_level} осіб ({third_level * 200} грн)\n\n"
+            f"🔗 Ваше посилання:\n"
+            f"t.me/yourbot?start={user_data.get('referral_code')}"
+        )
+
+        keyboard = [[InlineKeyboardButton("📤 Поділитися посиланням", url=f"https://t.me/yourbot?start={user_data.get('referral_code')}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(stats_text, reply_markup=reply_markup)
 
 
 async def request_tour(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник запиту на підбір туру"""
-    user_id = update.effective_user.id
-    with Session() as session:
-        user = session.query(User).filter_by(telegram_id=str(user_id)).first()
+    user_id = str(update.effective_user.id)
+    
+    # Перевіряємо дані користувача в Redis
+    user_data = get_user_data(user_id)
+    
+    if not user_data:
+        await update.message.reply_text("Спочатку потрібно зареєструватися!")
+        return
 
-        if user:
-            await update.message.reply_text(
-                "Опишіть ваші побажання до туру\n"
-                "(країна, дати, бюджет, кількість осіб):"
-            )
-            context.user_data['waiting_for_tour_request'] = True
-        else:
-            await update.message.reply_text("Спочатку потрібно зареєструватися!")
+    await update.message.reply_text(
+        "Опишіть ваші побажання до туру\n"
+        "(країна, дати, бюджет, кількість осіб):"
+    )
+    context.user_data['waiting_for_tour_request'] = True
 
 
 async def handle_tour_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник тексту з описом туру"""
     if context.user_data.get('waiting_for_tour_request'):
-        user_id = update.effective_user.id
-        with Session() as session:
-            user = session.query(User).filter_by(telegram_id=str(user_id)).first()
+        user_id = str(update.effective_user.id)
+        
+        # Перевіряємо дані користувача в Redis
+        user_data = get_user_data(user_id)
+        
+        if not user_data:
+            await update.message.reply_text("Спочатку потрібно зареєструватися!")
+            return
 
+        with Session() as session:
+            user = session.query(User).filter_by(telegram_id=user_id).first()
             if user:
                 tour_request = TourRequest(
                     user_id=user.id,
@@ -259,6 +291,11 @@ async def handle_tour_request(update: Update, context: ContextTypes.DEFAULT_TYPE
                 )
                 session.add(tour_request)
                 session.commit()
+
+                # Зберігаємо статус заявки в Redis
+                set_tour_request_status(tour_request.id, 'new')
+                # Додаємо заявку до списку останніх заявок користувача
+                add_to_recent_requests(tour_request.id, user_id)
 
                 # Відправляємо повідомлення адміністраторам
                 admins = session.query(User).filter_by(is_admin=True).all()
