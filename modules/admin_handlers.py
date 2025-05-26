@@ -8,7 +8,7 @@ from sqlalchemy import func
 def is_admin(user_id: int) -> bool:
     """Перевірка чи є користувач адміністратором"""
     with Session() as session:
-        user = session.query(User).filter_by(telegram_id=user_id).first()
+        user = session.query(User).filter_by(telegram_id=str(user_id)).first()
         return user.is_admin if user else False
 
 
@@ -503,7 +503,7 @@ async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = int(context.args[0])
         with Session() as session:
-            user = session.query(User).filter_by(telegram_id=user_id).first()
+            user = session.query(User).filter_by(telegram_id=str(user_id)).first()
 
             if user:
                 user.is_admin = True
@@ -553,7 +553,7 @@ async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = int(context.args[0])
         with Session() as session:
-            user = session.query(User).filter_by(telegram_id=user_id).first()
+            user = session.query(User).filter_by(telegram_id=str(user_id)).first()
 
             if user and user.is_admin:
                 user.is_admin = False

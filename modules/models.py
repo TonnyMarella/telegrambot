@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text
+from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, BigInteger
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
@@ -39,9 +39,9 @@ class User(Base):
     __tablename__ = 'users'
 
     id = Column(Integer, primary_key=True)
-    telegram_id = Column(Integer, unique=True)
-    phone_number = Column(String(20))
-    referral_code = Column(String(10), unique=True)
+    telegram_id = Column(String, unique=True, nullable=False)
+    phone_number = Column(String, nullable=False)
+    referral_code = Column(String, unique=True)
     referred_by = Column(Integer, ForeignKey('users.id'), nullable=True)
     balance = Column(Float, default=0.0)
     is_admin = Column(Boolean, default=False)

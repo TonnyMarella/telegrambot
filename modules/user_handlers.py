@@ -35,7 +35,7 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     with Session() as session:
         # Перевіряємо чи користувач вже існує
-        existing_user = session.query(User).filter_by(telegram_id=user_id).first()
+        existing_user = session.query(User).filter_by(telegram_id=str(user_id)).first()
         if existing_user:
             await update.message.reply_text("✅ Ви вже зареєстровані в системі!")
             return
@@ -86,11 +86,15 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 )
                                 session.add(bonus)
 
+        # Генеруємо реферальний код для нового користувача
+        new_referral_code = generate_referral_code()
+        
         # Створюємо нового користувача
         new_user = User(
-            telegram_id=user_id,
+            telegram_id=str(user_id),
             phone_number=phone_number,
-            referred_by=referred_by
+            referred_by=referred_by,
+            referral_code=new_referral_code
         )
         session.add(new_user)
         session.commit()
@@ -154,7 +158,7 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показати статистику користувача"""
     user_id = update.effective_user.id
     with Session() as session:
-        user = session.query(User).filter_by(telegram_id=user_id).first()
+        user = session.query(User).filter_by(telegram_id=str(user_id)).first()
 
         if user:
             # Отримання статистики рефералів
@@ -197,7 +201,7 @@ async def request_tour(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробник запиту на підбір туру"""
     user_id = update.effective_user.id
     with Session() as session:
-        user = session.query(User).filter_by(telegram_id=user_id).first()
+        user = session.query(User).filter_by(telegram_id=str(user_id)).first()
 
         if user:
             await update.message.reply_text(
@@ -214,7 +218,7 @@ async def handle_tour_request(update: Update, context: ContextTypes.DEFAULT_TYPE
     if context.user_data.get('waiting_for_tour_request'):
         user_id = update.effective_user.id
         with Session() as session:
-            user = session.query(User).filter_by(telegram_id=user_id).first()
+            user = session.query(User).filter_by(telegram_id=str(user_id)).first()
 
             if user:
                 tour_request = TourRequest(

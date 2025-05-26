@@ -37,7 +37,7 @@ async def check_user_authorization(update: Update, context: ContextTypes.DEFAULT
     """Перевірка авторизації користувача"""
     user_id = update.effective_user.id
     with Session() as session:
-        user = session.query(User).filter_by(telegram_id=user_id).first()
+        user = session.query(User).filter_by(telegram_id=str(user_id)).first()
         return user
 
 
