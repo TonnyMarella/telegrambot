@@ -13,7 +13,7 @@ from modules.user_handlers import (
 from modules.admin_handlers import (
     admin_panel, show_users, show_users_for_bonus,
     handle_user_identifier, handle_bonus_amount, handle_bonus_description,
-    show_tour_requests, set_admin, remove_admin,
+    show_tour_requests,
     show_users_list, search_user, handle_user_search, show_users_statistics,
     show_bonus_history, show_tour_request_details, complete_tour_request,
     show_tour_requests_menu, search_tour_request, handle_tour_search
@@ -136,21 +136,8 @@ async def handle_admin_text(update: Update, context: ContextTypes.DEFAULT_TYPE, 
         await show_users(update, context)
     elif text == "📋 Заявки на тури":
         await show_tour_requests_menu(update, context)
-    elif text == "💰 Додати бонус":
+    elif text == "💰 Нарахування балів":
         await show_users_for_bonus(update, context)
-    elif text == "📊 Статистика системи":
-        with Session() as session:
-            total_users = session.query(User).count()
-            active_users = session.query(User).filter(User.balance > 0).count()
-            total_balance = session.query(User).with_entities(User.balance).all()
-            total_balance_sum = sum([b[0] for b in total_balance if b[0]])
-
-            await update.message.reply_text(
-                f"📊 СТАТИСТИКА СИСТЕМИ\n\n"
-                f"👥 Всього користувачів: {total_users}\n"
-                f"💰 Активних користувачів: {active_users}\n"
-                f"💵 Загальний баланс: {total_balance_sum} грн"
-            )
     elif text == "👤 Режим користувача":
         # Перемикання в режим користувача
         keyboard = [
@@ -220,13 +207,10 @@ def main():
     application.add_handler(CommandHandler("stats", show_statistics))
     application.add_handler(CommandHandler("tour", request_tour))
     application.add_handler(CommandHandler("admin", admin_panel))
-    application.add_handler(CommandHandler("setadmin", set_admin))
-    application.add_handler(CommandHandler("removeadmin", remove_admin))
 
     # Обробники callback-запитів
     application.add_handler(CallbackQueryHandler(show_users_list, pattern='^admin_users_list$'))
     application.add_handler(CallbackQueryHandler(search_user, pattern='^admin_users_search$'))
-    application.add_handler(CallbackQueryHandler(show_users_statistics, pattern='^admin_users_stats$'))
     application.add_handler(CallbackQueryHandler(show_users, pattern='^admin_users$'))
     application.add_handler(CallbackQueryHandler(show_users_for_bonus, pattern='^bonus_user_\d+$'))
     application.add_handler(CallbackQueryHandler(show_bonus_history, pattern='^bonus_history_\d+$'))

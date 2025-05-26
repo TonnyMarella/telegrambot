@@ -45,7 +45,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [KeyboardButton("👥 Управління користувачами"), KeyboardButton("📋 Заявки на тури")],
-        [KeyboardButton("💰 Нарахування балів"), KeyboardButton("📊 Статистика системи")],
+        [KeyboardButton("💰 Нарахування балів")],
         [KeyboardButton("👤 Режим користувача")]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -109,8 +109,7 @@ async def show_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [InlineKeyboardButton("📋 Перегляд всіх користувачів", callback_data='admin_users_list')],
-        [InlineKeyboardButton("🔍 Пошук користувача", callback_data='admin_users_search')],
-        [InlineKeyboardButton("📊 Статистика користувачів", callback_data='admin_users_stats')]
+        [InlineKeyboardButton("🔍 Пошук користувача", callback_data='admin_users_search')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     text = "👥 УПРАВЛІННЯ КОРИСТУВАЧАМИ\n\nВиберіть потрібну опцію:"
@@ -134,7 +133,8 @@ async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if users_data:
         for user_data in users_data:
             admin_mark = " 👑" if user_data.get('is_admin') else ""
-            balance = user_data.get('balance', 0)
+            # Отримуємо актуальний баланс з Redis
+            balance = get_user_balance(user_data['telegram_id']) or user_data.get('balance', 0)
 
             text += (
                 f"ID: {user_data['id']}{admin_mark}\n"
@@ -149,7 +149,6 @@ async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [InlineKeyboardButton("🔍 Пошук", callback_data='admin_users_search')],
-        [InlineKeyboardButton("📊 Статистика", callback_data='admin_users_stats')],
         [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -321,7 +320,6 @@ async def show_users_statistics(update: Update, context: ContextTypes.DEFAULT_TY
         "📊 СТАТИСТИКА КОРИСТУВАЧІВ\n\n"
         f"👥 Всього користувачів: {stats['total_users']}\n"
         f"✅ Активних користувачів: {stats['active_users']}\n"
-        f"💰 Загальний баланс: {stats['total_balance']:.2f} грн\n"
         f"👥 Запрошено рефералів: {stats['total_referrals']}\n"
         f"🎁 Нараховано бонусів: {stats['total_bonuses']}\n"
         f"💵 Загальна сума бонусів: {stats['total_bonus_amount']:.2f} грн"
@@ -474,14 +472,23 @@ async def handle_bonus_description(update: Update, context: ContextTypes.DEFAULT
         telegram_id = context.user_data['bonus_user_telegram_id']
         user_phone = context.user_data['bonus_user_phone']
 
-        # Спочатку оновлюємо Redis
+        # Отримуємо поточний баланс з Redis
+        current_balance = get_user_balance(telegram_id)
+        if current_balance is None:
+            # Якщо немає в Redis, отримуємо з БД
+            with Session() as session:
+                user = session.query(User).get(user_id)
+                current_balance = user.balance if user else 0
+
+        # Оновлюємо баланс в Redis
+        new_balance = float(current_balance) + float(amount)
         increment_user_balance(telegram_id, amount)
 
-        # Потім оновлюємо БД
+        # Оновлюємо БД
         with Session() as session:
             user = session.query(User).get(user_id)
             if user:
-                user.balance += amount
+                user.balance = new_balance
                 bonus = ReferralBonus(
                     user_id=user.id,
                     amount=amount,
@@ -493,13 +500,9 @@ async def handle_bonus_description(update: Update, context: ContextTypes.DEFAULT
                 # Оновлюємо дані користувача в Redis
                 user_data = get_user_data(telegram_id)
                 if user_data:
-                    user_data['balance'] = float(user_data.get('balance', 0)) + amount
+                    user_data['balance'] = new_balance
                     set_user_data(telegram_id, user_data)
 
-                # Інвалідуємо кеш статистики
-                # (можна додати функцію invalidate_system_stats() в redis_client)
-
-                new_balance = get_user_balance(telegram_id)
                 await update.message.reply_text(
                     f"✅ Нараховано {amount} грн користувачу {user_phone}\n"
                     f"Новий баланс: {new_balance} грн"
@@ -510,7 +513,8 @@ async def handle_bonus_description(update: Update, context: ContextTypes.DEFAULT
                     await context.bot.send_message(
                         chat_id=telegram_id,
                         text=f"💰 Вам нараховано +{amount} грн!\n"
-                             f"💬 Причина: {description}"
+                             f"💬 Причина: {description}\n"
+                             f"💳 Ваш баланс: {new_balance} грн"
                     )
                 except Exception as e:
                     print(f"Помилка відправки повідомлення користувачу {telegram_id}: {str(e)}")
@@ -744,106 +748,6 @@ async def complete_tour_request(update: Update, context: ContextTypes.DEFAULT_TY
                 set_user_data(str(user.telegram_id), user_data)
 
             await show_tour_requests(update, context)
-
-
-async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Встановлення користувача як адміністратора"""
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ У вас немає доступу до цієї команди!")
-        return
-
-    try:
-        user_id = int(context.args[0])
-        with Session() as session:
-            user = session.query(User).filter_by(telegram_id=str(user_id)).first()
-
-            if user:
-                user.is_admin = True
-                session.commit()
-
-                # Сповіщаємо нового адміністратора та оновлюємо його меню
-                try:
-                    keyboard = [
-                        [KeyboardButton("👥 Управління користувачами"), KeyboardButton("📋 Заявки на тури")],
-                        [KeyboardButton("💰 Нарахування балів"), KeyboardButton("📊 Статистика системи")],
-                        [KeyboardButton("👤 Режим користувача")]
-                    ]
-                    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-                    # Надсилаємо повідомлення новому адміністратору
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text="🎉 Вітаємо! Ви тепер адміністратор системи!\n"
-                             "🛠 Адмін-панель активована. Використовуйте кнопки нижче для управління.",
-                        reply_markup=reply_markup
-                    )
-
-                    await update.message.reply_text(
-                        f"✅ Користувач {user.phone_number} тепер адміністратор\n"
-                        f"📨 Йому надіслано сповіщення про нові права"
-                    )
-                except Exception as e:
-                    await update.message.reply_text(
-                        f"✅ Користувач {user.phone_number} тепер адміністратор\n"
-                        f"⚠️ Не вдалося надіслати сповіщення (можливо, користувач заблокував бота)"
-                    )
-            else:
-                await update.message.reply_text("❌ Користувача з таким Telegram ID не знайдено")
-
-    except (ValueError, IndexError):
-        await update.message.reply_text("❌ Використовуйте: /setadmin <telegram_id>")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Помилка: {str(e)}")
-
-
-async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Зняття прав адміністратора"""
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("❌ У вас немає доступу до цієї команди!")
-        return
-
-    try:
-        user_id = int(context.args[0])
-        with Session() as session:
-            user = session.query(User).filter_by(telegram_id=str(user_id)).first()
-
-            if user and user.is_admin:
-                user.is_admin = False
-                session.commit()
-
-                # Оновлюємо меню користувача на звичайне
-                try:
-                    keyboard = [
-                        [KeyboardButton("📊 Моя статистика")],
-                        [KeyboardButton("🔗 Моє посилання")],
-                        [KeyboardButton("🏖 Підбір туру")],
-                        [KeyboardButton("ℹ Про програму")],
-                        [KeyboardButton("📞 Контакти")]
-                    ]
-                    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text="ℹ️ Ваші права адміністратора скасовані.\n"
-                             "Меню повернуто до звичайного режиму.",
-                        reply_markup=reply_markup
-                    )
-
-                    await update.message.reply_text(
-                        f"✅ У користувача {user.phone_number} скасовані права адміністратора"
-                    )
-                except:
-                    await update.message.reply_text(
-                        f"✅ У користувача {user.phone_number} скасовані права адміністратора\n"
-                        f"⚠️ Не вдалося надіслати сповіщення"
-                    )
-            else:
-                await update.message.reply_text("❌ Користувача не знайдено або він не є адміністратором")
-
-    except (ValueError, IndexError):
-        await update.message.reply_text("❌ Використовуйте: /removeadmin <telegram_id>")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Помилка: {str(e)}")
 
 
 async def show_bonus_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
