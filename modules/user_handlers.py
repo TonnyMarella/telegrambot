@@ -3,6 +3,10 @@ import string
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import ContextTypes
 from .models import Session, User, ReferralBonus, TourRequest
+from .redis_client import (
+    set_user_data, get_user_data, set_referral_code,
+    get_referral_user_id, increment_user_balance
+)
 
 
 def generate_referral_code():
@@ -31,11 +35,11 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     phone_number = update.message.contact.phone_number
-    user_id = update.effective_user.id
+    user_id = str(update.effective_user.id)
 
     with Session() as session:
         # Перевіряємо чи користувач вже існує
-        existing_user = session.query(User).filter_by(telegram_id=str(user_id)).first()
+        existing_user = session.query(User).filter_by(telegram_id=user_id).first()
         if existing_user:
             await update.message.reply_text("✅ Ви вже зареєстровані в системі!")
             return
@@ -47,11 +51,21 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         third_level_referrer = None
 
         if referral_code:
-            # Знаходимо користувача, який запросив
-            referrer = session.query(User).filter_by(referral_code=referral_code).first()
-            if referrer:
-                referred_by = referrer.id
+            # Спочатку перевіряємо в Redis
+            referrer_id = get_referral_user_id(referral_code)
+            if referrer_id:
+                referred_by = int(referrer_id)
+            else:
+                # Якщо немає в Redis, шукаємо в базі даних
+                referrer = session.query(User).filter_by(referral_code=referral_code).first()
+                if referrer:
+                    referred_by = referrer.id
+                    # Зберігаємо в Redis для майбутнього використання
+                    set_referral_code(referral_code, str(referrer.id))
+
+            if referred_by:
                 # Нараховуємо бонус запрошувачу
+                referrer = session.query(User).get(referred_by)
                 referrer.balance += 800
                 bonus = ReferralBonus(
                     user_id=referrer.id,
@@ -59,6 +73,8 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     description=f"Бонус за запрошення користувача {phone_number}"
                 )
                 session.add(bonus)
+                # Оновлюємо баланс в Redis
+                increment_user_balance(str(referrer.telegram_id), 800)
 
                 # Перевіряємо чи є у запрошувача свій запрошувач (другий рівень)
                 if referrer.referred_by:
@@ -72,6 +88,8 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             description=f"Бонус за запрошення користувача {phone_number} (2-й рівень)"
                         )
                         session.add(bonus)
+                        # Оновлюємо баланс в Redis
+                        increment_user_balance(str(second_level_referrer.telegram_id), 400)
 
                         # Перевіряємо чи є у користувача другого рівня свій запрошувач (третій рівень)
                         if second_level_referrer.referred_by:
@@ -85,19 +103,33 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     description=f"Бонус за запрошення користувача {phone_number} (3-й рівень)"
                                 )
                                 session.add(bonus)
+                                # Оновлюємо баланс в Redis
+                                increment_user_balance(str(third_level_referrer.telegram_id), 200)
 
         # Генеруємо реферальний код для нового користувача
         new_referral_code = generate_referral_code()
         
         # Створюємо нового користувача
         new_user = User(
-            telegram_id=str(user_id),
+            telegram_id=user_id,
             phone_number=phone_number,
             referred_by=referred_by,
             referral_code=new_referral_code
         )
         session.add(new_user)
         session.commit()
+
+        # Зберігаємо дані користувача в Redis
+        user_data = {
+            'telegram_id': user_id,
+            'phone_number': phone_number,
+            'referral_code': new_referral_code,
+            'referred_by': referred_by,
+            'balance': 0.0,
+            'is_admin': False
+        }
+        set_user_data(user_id, user_data)
+        set_referral_code(new_referral_code, user_id)
 
         # Відправляємо повідомлення про успішну реєстрацію
         await update.message.reply_text(
