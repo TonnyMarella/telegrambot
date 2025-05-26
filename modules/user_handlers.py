@@ -44,6 +44,7 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         referral_code = context.user_data.get('referral_code')
         referred_by = None
         second_level_referrer = None
+        third_level_referrer = None
 
         if referral_code:
             # Знаходимо користувача, який запросив
@@ -51,10 +52,10 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if referrer:
                 referred_by = referrer.id
                 # Нараховуємо бонус запрошувачу
-                referrer.balance += 100
+                referrer.balance += 800
                 bonus = ReferralBonus(
                     user_id=referrer.id,
-                    amount=100,
+                    amount=800,
                     description=f"Бонус за запрошення користувача {phone_number}"
                 )
                 session.add(bonus)
@@ -64,13 +65,26 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     second_level_referrer = session.query(User).get(referrer.referred_by)
                     if second_level_referrer:
                         # Нараховуємо бонус користувачу другого рівня
-                        second_level_referrer.balance += 50
+                        second_level_referrer.balance += 400
                         bonus = ReferralBonus(
                             user_id=second_level_referrer.id,
-                            amount=50,
+                            amount=400,
                             description=f"Бонус за запрошення користувача {phone_number} (2-й рівень)"
                         )
                         session.add(bonus)
+
+                        # Перевіряємо чи є у користувача другого рівня свій запрошувач (третій рівень)
+                        if second_level_referrer.referred_by:
+                            third_level_referrer = session.query(User).get(second_level_referrer.referred_by)
+                            if third_level_referrer:
+                                # Нараховуємо бонус користувачу третього рівня
+                                third_level_referrer.balance += 200
+                                bonus = ReferralBonus(
+                                    user_id=third_level_referrer.id,
+                                    amount=200,
+                                    description=f"Бонус за запрошення користувача {phone_number} (3-й рівень)"
+                                )
+                                session.add(bonus)
 
         # Створюємо нового користувача
         new_user = User(
@@ -96,7 +110,7 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 referrer_user = session.query(User).get(referred_by)
                 await context.bot.send_message(
                     chat_id=referrer_user.telegram_id,
-                    text=f"💰 Вам нараховано +100 грн!\n"
+                    text=f"💰 Вам нараховано +800 грн!\n"
                          f"💬 За запрошення користувача {phone_number}"
                 )
             except Exception as e:
@@ -107,11 +121,22 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     chat_id=second_level_referrer.telegram_id,
-                    text=f"💰 Вам нараховано +50 грн!\n"
+                    text=f"💰 Вам нараховано +400 грн!\n"
                          f"💬 За запрошення користувача {phone_number} (2-й рівень)"
                 )
             except Exception as e:
                 print(f"Помилка відправки повідомлення користувачу 2-го рівня {second_level_referrer.telegram_id}: {str(e)}")
+
+        # Відправляємо повідомлення користувачу третього рівня про нарахування бонусу
+        if third_level_referrer:
+            try:
+                await context.bot.send_message(
+                    chat_id=third_level_referrer.telegram_id,
+                    text=f"💰 Вам нараховано +200 грн!\n"
+                         f"💬 За запрошення користувача {phone_number} (3-й рівень)"
+                )
+            except Exception as e:
+                print(f"Помилка відправки повідомлення користувачу 3-го рівня {third_level_referrer.telegram_id}: {str(e)}")
 
         # Показуємо основне меню
         keyboard = [
@@ -153,9 +178,9 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"📊 ВАША СТАТИСТИКА\n"
                 f"💰 Поточний баланс: {user.balance} грн\n\n"
                 f"👥 ВАШІ РЕФЕРАЛИ:\n"
-                f"├── 1-й рівень: {first_level} осіб ({first_level * 100} грн)\n"
-                f"├── 2-й рівень: {second_level} осіб ({second_level * 50} грн)\n"
-                f"└── 3-й рівень: {third_level} осіб ({third_level * 25} грн)\n\n"
+                f"├── 1-й рівень: {first_level} осіб ({first_level * 800} грн)\n"
+                f"├── 2-й рівень: {second_level} осіб ({second_level * 400} грн)\n"
+                f"└── 3-й рівень: {third_level} осіб ({third_level * 200} грн)\n\n"
                 f"🔗 Ваше посилання:\n"
                 f"t.me/yourbot?start={user.referral_code}"
             )
@@ -221,3 +246,45 @@ async def handle_tour_request(update: Update, context: ContextTypes.DEFAULT_TYPE
                 context.user_data['waiting_for_tour_request'] = False
             else:
                 await update.message.reply_text("Спочатку потрібно зареєструватися!")
+
+
+async def handle_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, user):
+    """Обробка текстових повідомлень для звичайних користувачів"""
+    if text == "📊 Моя статистика":
+        await show_statistics(update, context)
+    elif text == "🏖 Підбір туру":
+        await request_tour(update, context)
+    elif text == "ℹ Про програму":
+        await update.message.reply_text(
+            "Ви маєте чудову нагоду допомогти своєму другу отримати якісну послугу з бронювання відпочинку: просто відправляйте унікальне посилання через цей бот або передайте його контактну інформацію (також тут), щоб наш найкращий спеціаліст зв'язався з ним.\n"
+            "Коли Ваш друг отримає послугу здійснивши бронювання туру - Вам нараховується бонус 800 грн.\n"
+            "Коли Ваші друзі почнуть розвивати свою мережу і відправляти свої посилання і хтось із них отримує послугу, то Вам також нараховуються бонуси, в такому розмірі:\n"
+            "2 ланка = 400 грн\n"
+            "3 ланка і всі наступні = 200 грн.\n"
+            "Всі бонуси зберігаються на вашому особовому рахунку і можуть бути використані Вами на оплату своє подорожі.\n\n"
+            "Кількість таких рекомендацій не обмежена"
+        )
+    elif text == "📞 Контакти":
+        await update.message.reply_text(
+            "📞 Наші контакти:\n\n"
+            "🌐 Сайт: your-site.com\n"
+            "📱 Instagram: @your_instagram\n"
+            "📱 Facebook: @your_facebook"
+        )
+    elif text == "🔗 Моє посилання":
+        await update.message.reply_text(
+            f"🔗 Ваше реферальне посилання:\n"
+            f"t.me/MyNewArtembot?start={user.referral_code}"
+        )
+    elif text == "🛠 Адмін панель":
+        # Перевіряємо чи користувач адмін
+        with Session() as session:
+            current_user = session.query(User).filter_by(telegram_id=user.telegram_id).first()
+            if current_user and current_user.is_admin:
+                await admin_panel(update, context)
+            else:
+                await update.message.reply_text("❌ У вас немає доступу до адмін-панелі!")
+    elif context.user_data.get('waiting_for_tour_request'):
+        await handle_tour_request(update, context)
+    else:
+        await update.message.reply_text("Будь ласка, використовуйте кнопки меню")
