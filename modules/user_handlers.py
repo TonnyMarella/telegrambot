@@ -25,73 +25,104 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробник отримання номера телефону"""
+    """Обробка отримання контакту користувача"""
     if not update.message.contact:
-        await update.message.reply_text("Будь ласка, поділіться вашим номером телефону")
+        await update.message.reply_text("❌ Будь ласка, надішліть свій контакт")
         return
 
     phone_number = update.message.contact.phone_number
     user_id = update.effective_user.id
 
     with Session() as session:
-        user = session.query(User).filter_by(telegram_id=user_id).first()
+        # Перевіряємо чи користувач вже існує
+        existing_user = session.query(User).filter_by(telegram_id=user_id).first()
+        if existing_user:
+            await update.message.reply_text("✅ Ви вже зареєстровані в системі!")
+            return
 
-        if not user:
-            # Створення нового користувача
-            referral_code = generate_referral_code()
-            user = User(
-                telegram_id=user_id,
-                phone_number=phone_number,
-                referral_code=referral_code
-            )
+        # Перевіряємо чи є реферальний код
+        referral_code = context.user_data.get('referral_code')
+        referred_by = None
+        second_level_referrer = None
 
-            # Перевіряємо наявність реферального коду
-            if 'referral_code' in context.user_data:
-                referrer = session.query(User).filter_by(referral_code=context.user_data['referral_code']).first()
-                if referrer:
-                    user.referred_by = referrer.id
-                    # Нараховуємо бонус рефереру
-                    referrer.balance += 100
-                    bonus = ReferralBonus(
-                        user_id=referrer.id,
-                        amount=100,
-                        description=f"Бонус за реєстрацію користувача {phone_number}"
-                    )
-                    session.add(bonus)
+        if referral_code:
+            # Знаходимо користувача, який запросив
+            referrer = session.query(User).filter_by(referral_code=referral_code).first()
+            if referrer:
+                referred_by = referrer.id
+                # Нараховуємо бонус запрошувачу
+                referrer.balance += 100
+                bonus = ReferralBonus(
+                    user_id=referrer.id,
+                    amount=100,
+                    description=f"Бонус за запрошення користувача {phone_number}"
+                )
+                session.add(bonus)
 
-            session.add(user)
-            session.commit()
+                # Перевіряємо чи є у запрошувача свій запрошувач (другий рівень)
+                if referrer.referred_by:
+                    second_level_referrer = session.query(User).get(referrer.referred_by)
+                    if second_level_referrer:
+                        # Нараховуємо бонус користувачу другого рівня
+                        second_level_referrer.balance += 50
+                        bonus = ReferralBonus(
+                            user_id=second_level_referrer.id,
+                            amount=50,
+                            description=f"Бонус за запрошення користувача {phone_number} (2-й рівень)"
+                        )
+                        session.add(bonus)
 
-            # Створюємо клавіатуру з основними кнопками
-            keyboard = [
-                [KeyboardButton("📊 Моя статистика")],
-                [KeyboardButton("🔗 Моє посилання")],
-                [KeyboardButton("🏖 Підбір туру")],
-                [KeyboardButton("ℹ Про програму")],
-                [KeyboardButton("📞 Контакти")],
-                [KeyboardButton("🛠 Адмін панель")]
-            ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        # Створюємо нового користувача
+        new_user = User(
+            telegram_id=user_id,
+            phone_number=phone_number,
+            referred_by=referred_by
+        )
+        session.add(new_user)
+        session.commit()
 
-            # Формуємо повідомлення про реєстрацію
-            message = "Дякую! Ви зареєстровані ✅\n"
-            if user.referred_by:
-                message += "Ваш друг отримав +100 грн за ваше запрошення!\n"
-            message += f"Ваше реферальне посилання: t.me/MyNewArtembot?start={referral_code}"
+        # Відправляємо повідомлення про успішну реєстрацію
+        await update.message.reply_text(
+            "✅ Реєстрація успішна!\n\n"
+            "Тепер ви можете:\n"
+            "├── Запрошувати друзів\n"
+            "├── Отримувати бонуси\n"
+            "└── Використовувати всі можливості бота"
+        )
 
-            await update.message.reply_text(message, reply_markup=reply_markup)
-        else:
-            # Оновлюємо меню для існуючого користувача
-            keyboard = [
-                [KeyboardButton("📊 Моя статистика")],
-                [KeyboardButton("🔗 Моє посилання")],
-                [KeyboardButton("🏖 Підбір туру")],
-                [KeyboardButton("ℹ Про програму")],
-                [KeyboardButton("📞 Контакти")],
-                [KeyboardButton("🛠 Адмін панель")]
-            ]
-            reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-            await update.message.reply_text("Ви вже зареєстровані в системі!", reply_markup=reply_markup)
+        # Відправляємо повідомлення запрошувачу про нарахування бонусу
+        if referred_by:
+            try:
+                referrer_user = session.query(User).get(referred_by)
+                await context.bot.send_message(
+                    chat_id=referrer_user.telegram_id,
+                    text=f"💰 Вам нараховано +100 грн!\n"
+                         f"💬 За запрошення користувача {phone_number}"
+                )
+            except Exception as e:
+                print(f"Помилка відправки повідомлення запрошувачу {referred_by}: {str(e)}")
+
+        # Відправляємо повідомлення користувачу другого рівня про нарахування бонусу
+        if second_level_referrer:
+            try:
+                await context.bot.send_message(
+                    chat_id=second_level_referrer.telegram_id,
+                    text=f"💰 Вам нараховано +50 грн!\n"
+                         f"💬 За запрошення користувача {phone_number} (2-й рівень)"
+                )
+            except Exception as e:
+                print(f"Помилка відправки повідомлення користувачу 2-го рівня {second_level_referrer.telegram_id}: {str(e)}")
+
+        # Показуємо основне меню
+        keyboard = [
+            [KeyboardButton("📊 Моя статистика")],
+            [KeyboardButton("🔗 Моє посилання")],
+            [KeyboardButton("🏖 Підбір туру")],
+            [KeyboardButton("ℹ Про програму")],
+            [KeyboardButton("📞 Контакти")]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        await update.message.reply_text("Виберіть потрібну опцію:", reply_markup=reply_markup)
 
 
 async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
