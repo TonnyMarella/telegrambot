@@ -414,7 +414,7 @@ async def handle_user_identifier(update: Update, context: ContextTypes.DEFAULT_T
     else:
         await update.message.reply_text(
             "❌ Користувача не знайдено.\n"
-            "Спробуйте ще раз або напишіть 'війти' для скасування:"
+            "Спробуйте ще раз або напишіть 'вийти' для скасування:"
         )
 
 
@@ -885,3 +885,127 @@ async def handle_tour_search(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
 
     context.user_data.pop('waiting_for_tour_search', None)
+
+
+async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Встановлення користувача як адміністратора"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ У вас немає доступу до цієї команди!")
+        return
+
+    try:
+        identifier = context.args[0]
+        with Session() as session:
+            # Спробуємо знайти користувача за ID або телефоном
+            try:
+                user_id = int(identifier)
+                user = session.query(User).get(user_id) or session.query(User).filter_by(telegram_id=str(user_id)).first()
+            except ValueError:
+                # Якщо не ID, то шукаємо за телефоном
+                user = session.query(User).filter_by(phone_number=identifier).first()
+
+            if user:
+                user.is_admin = True
+                session.commit()
+
+                # Оновлюємо дані в Redis
+                user_data = get_user_data(str(user.telegram_id))
+                if user_data:
+                    user_data['is_admin'] = True
+                    set_user_data(str(user.telegram_id), user_data)
+
+                # Сповіщаємо нового адміністратора та оновлюємо його меню
+                try:
+                    keyboard = [
+                        [KeyboardButton("👥 Управління користувачами"), KeyboardButton("📋 Заявки на тури")],
+                        [KeyboardButton("💰 Нарахування балів")],
+                        [KeyboardButton("👤 Режим користувача")]
+                    ]
+                    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+                    # Надсилаємо повідомлення новому адміністратору
+                    await context.bot.send_message(
+                        chat_id=user.telegram_id,
+                        text="🎉 Вітаємо! Ви тепер адміністратор системи!\n"
+                             "🛠 Адмін-панель активована. Використовуйте кнопки нижче для управління.",
+                        reply_markup=reply_markup
+                    )
+
+                    await update.message.reply_text(
+                        f"✅ Користувач {user.phone_number} тепер адміністратор\n"
+                        f"📨 Йому надіслано сповіщення про нові права"
+                    )
+                except Exception as e:
+                    await update.message.reply_text(
+                        f"✅ Користувач {user.phone_number} тепер адміністратор\n"
+                        f"⚠️ Не вдалося надіслати сповіщення (можливо, користувач заблокував бота)"
+                    )
+            else:
+                await update.message.reply_text("❌ Користувача не знайдено")
+
+    except (ValueError, IndexError):
+        await update.message.reply_text("❌ Використовуйте: /set_admin <id або номер телефону>")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Помилка: {str(e)}")
+
+
+async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Зняття прав адміністратора"""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("❌ У вас немає доступу до цієї команди!")
+        return
+
+    try:
+        identifier = context.args[0]
+        with Session() as session:
+            # Спробуємо знайти користувача за ID або телефоном
+            try:
+                user_id = int(identifier)
+                user = session.query(User).get(user_id) or session.query(User).filter_by(telegram_id=str(user_id)).first()
+            except ValueError:
+                # Якщо не ID, то шукаємо за телефоном
+                user = session.query(User).filter_by(phone_number=identifier).first()
+
+            if user and user.is_admin:
+                user.is_admin = False
+                session.commit()
+
+                # Оновлюємо дані в Redis
+                user_data = get_user_data(str(user.telegram_id))
+                if user_data:
+                    user_data['is_admin'] = False
+                    set_user_data(str(user.telegram_id), user_data)
+
+                # Оновлюємо меню користувача на звичайне
+                try:
+                    keyboard = [
+                        [KeyboardButton("📊 Моя статистика")],
+                        [KeyboardButton("🔗 Моє посилання")],
+                        [KeyboardButton("🏖 Підбір туру")],
+                        [KeyboardButton("ℹ Про програму")],
+                        [KeyboardButton("📞 Контакти")]
+                    ]
+                    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+                    await context.bot.send_message(
+                        chat_id=user.telegram_id,
+                        text="ℹ️ Ваші права адміністратора скасовані.\n"
+                             "Меню повернуто до звичайного режиму.",
+                        reply_markup=reply_markup
+                    )
+
+                    await update.message.reply_text(
+                        f"✅ У користувача {user.phone_number} скасовані права адміністратора"
+                    )
+                except Exception as e:
+                    await update.message.reply_text(
+                        f"✅ У користувача {user.phone_number} скасовані права адміністратора\n"
+                        f"⚠️ Не вдалося надіслати сповіщення (можливо, користувач заблокував бота)"
+                    )
+            else:
+                await update.message.reply_text("❌ Користувача не знайдено або він не є адміністратором")
+
+    except (ValueError, IndexError):
+        await update.message.reply_text("❌ Використовуйте: /remove_admin <id або номер телефону>")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Помилка: {str(e)}")

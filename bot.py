@@ -13,7 +13,7 @@ from modules.user_handlers import (
 from modules.admin_handlers import (
     admin_panel, show_users, show_users_for_bonus,
     handle_user_identifier, handle_bonus_amount, handle_bonus_description,
-    show_tour_requests,
+    show_tour_requests, set_admin, remove_admin,
     show_users_list, search_user, handle_user_search, show_users_statistics,
     show_bonus_history, show_tour_request_details, complete_tour_request,
     show_tour_requests_menu, search_tour_request, handle_tour_search
@@ -207,6 +207,8 @@ def main():
     application.add_handler(CommandHandler("stats", show_statistics))
     application.add_handler(CommandHandler("tour", request_tour))
     application.add_handler(CommandHandler("admin", admin_panel))
+    application.add_handler(CommandHandler("set_admin", set_admin))
+    application.add_handler(CommandHandler("remove_admin", remove_admin))
 
     # Обробники callback-запитів
     application.add_handler(CallbackQueryHandler(show_users_list, pattern='^admin_users_list$'))
