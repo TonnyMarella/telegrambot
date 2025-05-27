@@ -17,7 +17,7 @@ from modules.admin_handlers import (
     show_users_list, search_user, handle_user_search, show_users_statistics,
     show_bonus_history, show_tour_request_details, complete_tour_request,
     show_tour_requests_menu, search_tour_request, handle_tour_search,
-    show_user_referrals, show_user_info
+    show_user_referrals, show_user_info, handle_deduct_amount, handle_deduct_description
 )
 
 # Завантаження змінних середовища
@@ -47,6 +47,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Перевіряємо чи очікуємо введення ідентифікатора користувача
     if context.user_data.get('waiting_for_user_identifier'):
         await handle_user_identifier(update, context)
+        return
+
+    # Перевіряємо чи очікуємо введення суми бонусу
+    if context.user_data.get('waiting_for_deduct_amount'):
+        await handle_deduct_amount(update, context)
+        return
+
+    # Перевіряємо чи очікуємо введення опису бонусу
+    if context.user_data.get('waiting_for_deduct_description'):
+        await handle_deduct_description(update, context)
         return
 
     # Перевіряємо чи очікуємо введення суми бонусу
@@ -218,6 +228,7 @@ def main():
     application.add_handler(CallbackQueryHandler(search_user, pattern='^admin_users_search$'))
     application.add_handler(CallbackQueryHandler(show_users, pattern='^admin_users$'))
     application.add_handler(CallbackQueryHandler(show_users_for_bonus, pattern='^bonus_user_\d+$'))
+    application.add_handler(CallbackQueryHandler(show_users_for_bonus, pattern='^deduct_points_\d+$'))
     application.add_handler(CallbackQueryHandler(show_bonus_history, pattern='^bonus_history_\d+$'))
     application.add_handler(CallbackQueryHandler(show_tour_requests, pattern='^admin_tours_list$'))
     application.add_handler(CallbackQueryHandler(search_tour_request, pattern='^admin_tours_search$'))

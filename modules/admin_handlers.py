@@ -231,6 +231,7 @@ async def handle_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
             keyboard = [
                 [InlineKeyboardButton("💰 Нарахувати бонус", callback_data=f'bonus_user_{user.id}')],
+                [InlineKeyboardButton("💸 Відняти кошти", callback_data=f'deduct_points_{user.id}')],
                 [InlineKeyboardButton("📊 Історія нарахувань", callback_data=f'bonus_history_{user.id}')],
                 [InlineKeyboardButton("👥 Переглянути рефералів", callback_data=f'show_referrals_{user.id}')],
                 [InlineKeyboardButton("🔍 Пошук іншого", callback_data='admin_users_search')],
@@ -318,41 +319,75 @@ async def show_users_for_bonus(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if hasattr(update, 'callback_query') and update.callback_query:
-        user_id = int(update.callback_query.data.split('_')[2])
+        data = update.callback_query.data.split('_')
+        user_id = int(data[2])
+        if 'deduct' in data[0]:
+            user_data = None
+            with Session() as session:
+                user = session.query(User).get(user_id)
+                if user:
+                    user_data = get_user_data(str(user.telegram_id))
+                    if not user_data:
+                        # Зберігаємо в Redis якщо немає
+                        user_data = {
+                            'id': user.id,
+                            'telegram_id': str(user.telegram_id),
+                            'phone_number': user.phone_number,
+                            'referral_code': user.referral_code,
+                            'referred_by': user.referred_by,
+                            'balance': user.balance,
+                            'is_admin': user.is_admin,
+                            'created_at': user.created_at.strftime('%d.%m.%Y')
+                        }
+                        set_user_data(str(user.telegram_id), user_data)
 
-        # Спочатку шукаємо в Redis
-        user_data = None
-        with Session() as session:
-            user = session.query(User).get(user_id)
-            if user:
-                user_data = get_user_data(str(user.telegram_id))
-                if not user_data:
-                    # Зберігаємо в Redis якщо немає
-                    user_data = {
-                        'id': user.id,
-                        'telegram_id': str(user.telegram_id),
-                        'phone_number': user.phone_number,
-                        'referral_code': user.referral_code,
-                        'referred_by': user.referred_by,
-                        'balance': user.balance,
-                        'is_admin': user.is_admin,
-                        'created_at': user.created_at.strftime('%d.%m.%Y')
-                    }
-                    set_user_data(str(user.telegram_id), user_data)
+            if user_data:
+                context.user_data['deduct_user_id'] = user_data['id']
+                context.user_data['deduct_user_phone'] = user_data['phone_number']
+                context.user_data['deduct_user_telegram_id'] = user_data['telegram_id']
 
-        if user_data:
-            context.user_data['bonus_user_id'] = user_data['id']
-            context.user_data['bonus_user_phone'] = user_data['phone_number']
-            context.user_data['bonus_user_telegram_id'] = user_data['telegram_id']
-
-            await update.callback_query.message.edit_text(
-                f"Знайдено: {user_data['phone_number']}\n"
-                f"Поточний баланс: {user.balance} грн\n\n"
-                f"Введіть суму для нарахування:"
-            )
-            context.user_data['waiting_for_bonus_amount'] = True
+                await update.callback_query.message.edit_text(
+                    f"Знайдено: {user_data['phone_number']}\n"
+                    f"Поточний баланс: {user.balance} грн\n\n"
+                    f"Введіть суму для віднімання:"
+                )
+                context.user_data['waiting_for_deduct_amount'] = True
+            else:
+                await update.callback_query.message.edit_text("❌ Користувача не знайдено")
         else:
-            await update.callback_query.message.edit_text("❌ Користувача не знайдено")
+            # Спочатку шукаємо в Redis
+            user_data = None
+            with Session() as session:
+                user = session.query(User).get(user_id)
+                if user:
+                    user_data = get_user_data(str(user.telegram_id))
+                    if not user_data:
+                        # Зберігаємо в Redis якщо немає
+                        user_data = {
+                            'id': user.id,
+                            'telegram_id': str(user.telegram_id),
+                            'phone_number': user.phone_number,
+                            'referral_code': user.referral_code,
+                            'referred_by': user.referred_by,
+                            'balance': user.balance,
+                            'is_admin': user.is_admin,
+                            'created_at': user.created_at.strftime('%d.%m.%Y')
+                        }
+                        set_user_data(str(user.telegram_id), user_data)
+
+            if user_data:
+                context.user_data['bonus_user_id'] = user_data['id']
+                context.user_data['bonus_user_phone'] = user_data['phone_number']
+                context.user_data['bonus_user_telegram_id'] = user_data['telegram_id']
+
+                await update.callback_query.message.edit_text(
+                    f"Знайдено: {user_data['phone_number']}\n"
+                    f"Поточний баланс: {user.balance} грн\n\n"
+                    f"Введіть суму для нарахування:"
+                )
+                context.user_data['waiting_for_bonus_amount'] = True
+            else:
+                await update.callback_query.message.edit_text("❌ Користувача не знайдено")
     else:
         await update.message.reply_text("Введіть ID користувача або номер телефону:")
         context.user_data['waiting_for_user_identifier'] = True
@@ -426,6 +461,39 @@ async def handle_bonus_amount(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ Будь ласка, введіть коректну суму!")
 
 
+async def handle_deduct_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка введеної суми для віднімання"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    text = update.message.text.strip()
+    
+    # Перевіряємо чи користувач хоче вийти
+    if text.lower() in ['вийти', 'exit', 'cancel', 'скасувати']:
+        context.user_data.pop('waiting_for_deduct_amount', None)
+        context.user_data.pop('deduct_user_id', None)
+        context.user_data.pop('deduct_user_phone', None)
+        context.user_data.pop('deduct_user_telegram_id', None)
+        await update.message.reply_text("❌ Операцію скасовано")
+        return
+
+    try:
+        amount = float(text)
+        if amount <= 0:
+            await update.message.reply_text("❌ Сума має бути більше 0!")
+            return
+
+        context.user_data['deduct_amount'] = amount
+        await update.message.reply_text(
+            "Введіть опис для віднімання (наприклад: 'Віднімання за порушення правил'):"
+        )
+        context.user_data['waiting_for_deduct_amount'] = False
+        context.user_data['waiting_for_deduct_description'] = True
+
+    except ValueError:
+        await update.message.reply_text("❌ Будь ласка, введіть коректну суму!")
+
+
 async def handle_bonus_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обробка опису бонусу та нарахування"""
     if not is_admin(update.effective_user.id):
@@ -474,6 +542,58 @@ async def handle_bonus_description(update: Update, context: ContextTypes.DEFAULT
     context.user_data.pop('selected_user_id', None)
     context.user_data.pop('bonus_amount', None)
     context.user_data.pop('waiting_for_bonus_description', None)
+
+
+async def handle_deduct_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обробка опису віднімання та виконання віднімання"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    user_id = context.user_data.get('deduct_user_id')
+    amount = context.user_data.get('deduct_amount')
+    description = update.message.text
+
+    with Session() as session:
+        user = session.query(User).get(user_id)
+        if user:
+            # Перевіряємо чи достатньо коштів
+            if user.balance < amount:
+                await update.message.reply_text("❌ У користувача недостатньо коштів!")
+                return
+
+            # Віднімаємо кошти в базі даних
+            user.balance -= amount
+            bonus = ReferralBonus(
+                user_id=user.id,
+                amount=-amount,  # Зберігаємо від'ємне значення
+                description=description
+            )
+            session.add(bonus)
+            session.commit()
+
+            # Відправляємо повідомлення користувачу
+            try:
+                await context.bot.send_message(
+                    chat_id=user.telegram_id,
+                    text=f"💰 З вашого балансу віднято {amount} грн!\n"
+                         f"💬 {description}"
+                )
+            except Exception as e:
+                print(f"Помилка відправки повідомлення користувачу {user.telegram_id}: {str(e)}")
+
+            await update.message.reply_text(
+                f"✅ Кошти успішно віднято!\n"
+                f"👤 Користувач: {user.phone_number}\n"
+                f"💰 Сума: {amount} грн\n"
+                f"📝 Опис: {description}"
+            )
+
+            # Очищаємо дані з контексту
+            context.user_data.pop('waiting_for_deduct_description', None)
+            context.user_data.pop('deduct_user_id', None)
+            context.user_data.pop('deduct_user_phone', None)
+            context.user_data.pop('deduct_user_telegram_id', None)
+            context.user_data.pop('deduct_amount', None)
 
 
 def get_tour_requests_from_cache_or_db():
@@ -1124,6 +1244,7 @@ async def show_user_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         keyboard = [
             [InlineKeyboardButton("💰 Нарахувати бонус", callback_data=f'bonus_user_{user.id}')],
+            [InlineKeyboardButton("💰 Відняти бонус", callback_data=f'deduct_points_{user.id}')],
             [InlineKeyboardButton("📊 Історія нарахувань", callback_data=f'bonus_history_{user.id}')],
             [InlineKeyboardButton("👥 Переглянути рефералів", callback_data=f'show_referrals_{user.id}')],
             [InlineKeyboardButton("🔍 Пошук іншого", callback_data='admin_users_search')],

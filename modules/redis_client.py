@@ -60,6 +60,12 @@ def increment_user_balance(user_id: str, amount: float):
     redis_client.incrbyfloat(key, amount)
 
 
+def decrement_user_balance(user_id: str, amount: float):
+    """Зменшує баланс користувача в Redis"""
+    key = f"balance:{user_id}"
+    redis_client.incrbyfloat(key, -amount)
+
+
 def get_user_balance(user_id: str) -> float:
     """Отримує баланс користувача з Redis"""
     key = f"balance:{user_id}"
