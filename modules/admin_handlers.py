@@ -232,6 +232,7 @@ async def handle_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE)
             keyboard = [
                 [InlineKeyboardButton("💰 Нарахувати бонус", callback_data=f'bonus_user_{user.id}')],
                 [InlineKeyboardButton("📊 Історія нарахувань", callback_data=f'bonus_history_{user.id}')],
+                [InlineKeyboardButton("👥 Переглянути рефералів", callback_data=f'show_referrals_{user.id}')],
                 [InlineKeyboardButton("🔍 Пошук іншого", callback_data='admin_users_search')],
                 [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
             ]
@@ -693,7 +694,7 @@ async def show_bonus_history(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not is_admin(update.effective_user.id):
         return
 
-    user_id = int(update.callback_query.data.split('_')[2])
+    user_id = int(update.callback_query.data.split('_')[2]) 
     
     with Session() as session:
         user = session.query(User).get(user_id)
@@ -953,3 +954,171 @@ async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Використовуйте: /remove_admin <id або номер телефону>")
     except Exception as e:
         await update.message.reply_text(f"❌ Помилка: {str(e)}")
+
+
+def get_user_referrals(user_id: int, level: int = 1):
+    """Отримання рефералів користувача за рівнем"""
+    with Session() as session:
+        if level == 1:
+            # Прямі реферали
+            return session.query(User).filter_by(referred_by=user_id).all()
+        else:
+            # Отримуємо рефералів попереднього рівня
+            prev_level_referrals = get_user_referrals(user_id, level - 1)
+            if not prev_level_referrals:
+                return []
+            
+            # Отримуємо рефералів для кожного реферала попереднього рівня
+            current_level_referrals = []
+            for referral in prev_level_referrals:
+                current_level_referrals.extend(
+                    session.query(User).filter_by(referred_by=referral.id).all()
+                )
+            return current_level_referrals
+
+
+def get_referral_stats(user_id: int):
+    """Отримання статистики рефералів користувача"""
+    stats = {
+        'level_1': 0,
+        'level_2': 0,
+        'level_3': 0
+    }
+    
+    for level in range(1, 4):
+        referrals = get_user_referrals(user_id, level)
+        stats[f'level_{level}'] = len(referrals)
+    
+    return stats
+
+
+def get_referral_bonus_stats(user_id: int):
+    """Отримання статистики бонусів від рефералів користувача"""
+    with Session() as session:
+        # Отримуємо бонуси для рефералів 1-го рівня
+        first_level_bonuses = session.query(func.sum(ReferralBonus.amount)).filter(
+            ReferralBonus.user_id == user_id,
+            ReferralBonus.amount == 800
+        ).scalar() or 0
+
+        # Отримуємо бонуси для рефералів 2-го рівня
+        second_level_bonuses = session.query(func.sum(ReferralBonus.amount)).filter(
+            ReferralBonus.user_id == user_id,
+            ReferralBonus.description.like('%2-й рівень%')
+        ).scalar() or 0
+
+        # Отримуємо бонуси для рефералів 3-го рівня
+        third_level_bonuses = session.query(func.sum(ReferralBonus.amount)).filter(
+            ReferralBonus.user_id == user_id,
+            ReferralBonus.description.like('%3-й рівень%')
+        ).scalar() or 0
+
+        # Отримуємо загальну суму бонусів
+        total_bonuses = session.query(func.sum(ReferralBonus.amount)).filter(
+            ReferralBonus.user_id == user_id
+        ).scalar() or 0
+
+        stats = {
+            'level_1': first_level_bonuses,
+            'level_2': second_level_bonuses,
+            'level_3': third_level_bonuses,
+            'total': total_bonuses
+        }
+        return stats
+
+
+async def show_user_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показ рефералів користувача"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    query = update.callback_query
+    user_id = int(query.data.split('_')[2])  # Отримуємо ID користувача з callback_data
+
+    # Отримуємо статистику рефералів
+    stats = get_referral_stats(user_id)
+    bonus_stats = get_referral_bonus_stats(user_id)
+    
+    # Отримуємо всі бонуси для перевірки
+    with Session() as session:
+        all_bonuses = session.query(ReferralBonus).filter_by(user_id=user_id).all()
+        total_bonus_amount = sum(bonus.amount for bonus in all_bonuses)
+    
+    text = (
+        f"👥 РЕФЕРАЛИ КОРИСТУВАЧА (ID: {user_id})\n\n"
+        f"📊 Статистика:\n"
+        f"1️⃣ Рівень: {stats['level_1']} рефералів (Бонуси: {bonus_stats['level_1']} грн)\n"
+        f"2️⃣ Рівень: {stats['level_2']} рефералів (Бонуси: {bonus_stats['level_2']} грн)\n"
+        f"3️⃣ Рівень: {stats['level_3']} рефералів (Бонуси: {bonus_stats['level_3']} грн)\n"
+        f"💰 Загальна сума бонусів: {total_bonus_amount} грн\n\n"
+    )
+
+    # Отримуємо рефералів для кожного рівня
+    for level in range(1, 4):
+        referrals = get_user_referrals(user_id, level)
+        text += f"📊 Рівень {level}:\n"
+        
+        if referrals:
+            for ref in referrals:
+                text += (
+                    f"👤 ID: {ref.id}\n"
+                    f"📱 Телефон: {ref.phone_number}\n"
+                    f"💰 Баланс: {ref.balance} грн\n"
+                    f"📅 Дата реєстрації: {ref.created_at.strftime('%d.%m.%Y')}\n"
+                    "─────────────────\n"
+                )
+        else:
+            text += "Немає рефералів\n"
+        text += "\n"
+
+    keyboard = [
+        [InlineKeyboardButton("◀️ Назад", callback_data=f'user_info_{user_id}')]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await query.message.edit_text(text, reply_markup=reply_markup)
+
+
+async def show_user_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показ інформації про користувача"""
+    if not is_admin(update.effective_user.id):
+        return
+
+    query = update.callback_query
+    user_id = int(query.data.split('_')[2])  # Отримуємо ID користувача з callback_data
+
+    with Session() as session:
+        user = session.query(User).get(user_id)
+        if not user:
+            await query.message.edit_text("❌ Користувача не знайдено")
+            return
+
+        # Отримуємо актуальну статистику з БД
+        total_referrals = session.query(User).filter_by(referred_by=user.id).count()
+        total_bonuses = session.query(ReferralBonus).filter_by(user_id=user.id).count()
+        total_bonus_amount = session.query(ReferralBonus).filter_by(user_id=user.id).with_entities(
+            func.sum(ReferralBonus.amount)).scalar() or 0
+
+        text = (
+            f"👤 ІНФОРМАЦІЯ ПРО КОРИСТУВАЧА\n\n"
+            f"🆔 ID: {user.id}\n"
+            f"📱 Телефон: {user.phone_number}\n"
+            f"💰 Баланс: {user.balance} грн\n"
+            f"🔗 Реферальний код: {user.referral_code}\n"
+            f"📅 Дата реєстрації: {user.created_at.strftime('%d.%m.%Y')}\n"
+            f"👥 Запрошено рефералів: {total_referrals}\n"
+            f"🎁 Отримано бонусів: {total_bonuses}\n"
+            f"💵 Загальна сума бонусів: {total_bonus_amount} грн\n"
+            f"{'👑 Адміністратор' if user.is_admin else ''}"
+        )
+
+        keyboard = [
+            [InlineKeyboardButton("💰 Нарахувати бонус", callback_data=f'bonus_user_{user.id}')],
+            [InlineKeyboardButton("📊 Історія нарахувань", callback_data=f'bonus_history_{user.id}')],
+            [InlineKeyboardButton("👥 Переглянути рефералів", callback_data=f'show_referrals_{user.id}')],
+            [InlineKeyboardButton("🔍 Пошук іншого", callback_data='admin_users_search')],
+            [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.message.edit_text(text, reply_markup=reply_markup)

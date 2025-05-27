@@ -16,7 +16,8 @@ from modules.admin_handlers import (
     show_tour_requests, set_admin, remove_admin,
     show_users_list, search_user, handle_user_search, show_users_statistics,
     show_bonus_history, show_tour_request_details, complete_tour_request,
-    show_tour_requests_menu, search_tour_request, handle_tour_search
+    show_tour_requests_menu, search_tour_request, handle_tour_search,
+    show_user_referrals, show_user_info
 )
 
 # Завантаження змінних середовища
@@ -221,6 +222,8 @@ def main():
     application.add_handler(CallbackQueryHandler(show_tour_requests_menu, pattern='^admin_tours$'))
     application.add_handler(CallbackQueryHandler(show_tour_request_details, pattern='^tour_request_\d+$'))
     application.add_handler(CallbackQueryHandler(complete_tour_request, pattern='^complete_request_\d+$'))
+    application.add_handler(CallbackQueryHandler(show_user_referrals, pattern='^show_referrals_\d+$'))
+    application.add_handler(CallbackQueryHandler(show_user_info, pattern='^user_info_\d+$'))
 
     # Запуск бота
     application.run_polling()
