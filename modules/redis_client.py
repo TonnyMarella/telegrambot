@@ -124,6 +124,14 @@ def set_users_list(offset: int, limit: int, users_data: list, expire_seconds: in
     redis_client.setex(key, expire_seconds, json.dumps(users_data))
 
 
+def clear_users_list_cache():
+    """Очистити кеш списку користувачів"""
+    pattern = "users_list:*"
+    keys = redis_client.keys(pattern)
+    if keys:
+        redis_client.delete(*keys)
+
+
 def get_system_stats() -> dict:
     """Отримати системну статистику з Redis"""
     data = redis_client.get("system_stats")

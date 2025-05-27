@@ -7,7 +7,8 @@ from .redis_client import (
     get_user_data, get_tour_request_status,
     set_tour_request_status, set_tour_request_data, get_recent_requests,
     set_user_data, get_user_balance, increment_user_balance,
-    get_users_list, set_users_list, get_system_stats, set_system_stats
+    get_users_list, set_users_list, get_system_stats, set_system_stats,
+    clear_users_list_cache
 )
 
 
@@ -914,6 +915,9 @@ async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     user_data['is_admin'] = True
                     set_user_data(str(user.telegram_id), user_data)
 
+                # Очищаємо кеш списку користувачів
+                clear_users_list_cache()
+
                 # Сповіщаємо нового адміністратора та оновлюємо його меню
                 try:
                     keyboard = [
@@ -975,6 +979,9 @@ async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if user_data:
                     user_data['is_admin'] = False
                     set_user_data(str(user.telegram_id), user_data)
+
+                # Очищаємо кеш списку користувачів
+                clear_users_list_cache()
 
                 # Оновлюємо меню користувача на звичайне
                 try:

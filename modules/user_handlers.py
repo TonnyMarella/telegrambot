@@ -8,7 +8,7 @@ from .redis_client import (
     get_referral_user_id, increment_user_balance,
     get_user_balance, set_tour_request_status,
     get_tour_request_status, add_to_recent_requests,
-    get_recent_requests
+    get_recent_requests, clear_users_list_cache
 )
 
 
@@ -124,15 +124,20 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Зберігаємо дані користувача в Redis
         user_data = {
+            'id': new_user.id,  # Додаємо ID користувача
             'telegram_id': user_id,
             'phone_number': phone_number,
             'referral_code': new_referral_code,
             'referred_by': referred_by,
             'balance': 0.0,
-            'is_admin': False
+            'is_admin': False,
+            'created_at': new_user.created_at.strftime('%d.%m.%Y')
         }
         set_user_data(user_id, user_data)
         set_referral_code(new_referral_code, user_id)
+
+        # Очищаємо кеш списку користувачів
+        clear_users_list_cache()
 
         # Відправляємо повідомлення про успішну реєстрацію
         await update.message.reply_text(
@@ -243,10 +248,10 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"├── 2-й рівень: {second_level} осіб ({second_level * 400} грн)\n"
             f"└── 3-й рівень: {third_level} осіб ({third_level * 200} грн)\n\n"
             f"🔗 Ваше посилання:\n"
-            f"t.me/yourbot?start={user_data.get('referral_code')}"
+            f"t.me/MyNewArtembot?start={user_data.get('referral_code')}"
         )
 
-        keyboard = [[InlineKeyboardButton("📤 Поділитися посиланням", url=f"https://t.me/yourbot?start={user_data.get('referral_code')}")]]
+        keyboard = [[InlineKeyboardButton("📤 Поділитися посиланням", url=f"https://t.me/MyNewArtembot?start={user_data.get('referral_code')}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(stats_text, reply_markup=reply_markup)
