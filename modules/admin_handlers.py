@@ -341,14 +341,13 @@ async def show_users_for_bonus(update: Update, context: ContextTypes.DEFAULT_TYP
                     set_user_data(str(user.telegram_id), user_data)
 
         if user_data:
-            balance = get_user_balance(user_data['telegram_id']) or user_data.get('balance', 0)
             context.user_data['bonus_user_id'] = user_data['id']
             context.user_data['bonus_user_phone'] = user_data['phone_number']
             context.user_data['bonus_user_telegram_id'] = user_data['telegram_id']
 
             await update.callback_query.message.edit_text(
                 f"Знайдено: {user_data['phone_number']}\n"
-                f"Поточний баланс: {balance} грн\n\n"
+                f"Поточний баланс: {user.balance} грн\n\n"
                 f"Введіть суму для нарахування:"
             )
             context.user_data['waiting_for_bonus_amount'] = True
@@ -399,8 +398,19 @@ async def handle_bonus_amount(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not is_admin(update.effective_user.id):
         return
 
+    text = update.message.text.strip()
+    
+    # Перевіряємо чи користувач хоче вийти
+    if text.lower() in ['вийти', 'exit', 'cancel', 'скасувати']:
+        context.user_data.pop('waiting_for_bonus_amount', None)
+        context.user_data.pop('bonus_user_id', None)
+        context.user_data.pop('bonus_user_phone', None)
+        context.user_data.pop('bonus_user_telegram_id', None)
+        await update.message.reply_text("❌ Операцію скасовано")
+        return
+
     try:
-        amount = float(update.message.text)
+        amount = float(text)
         if amount <= 0:
             await update.message.reply_text("❌ Сума має бути більше 0!")
             return
