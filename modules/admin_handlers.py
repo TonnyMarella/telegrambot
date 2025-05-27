@@ -406,6 +406,7 @@ async def handle_bonus_amount(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text(
             "Введіть опис для бонусу (наприклад: 'Бонус за активність'):"
         )
+        context.user_data['waiting_for_bonus_amount'] = False
         context.user_data['waiting_for_bonus_description'] = True
 
     except ValueError:
@@ -417,7 +418,7 @@ async def handle_bonus_description(update: Update, context: ContextTypes.DEFAULT
     if not is_admin(update.effective_user.id):
         return
 
-    user_id = context.user_data.get('selected_user_id')
+    user_id = context.user_data.get('bonus_user_id')
     amount = context.user_data.get('bonus_amount')
     description = update.message.text
 
