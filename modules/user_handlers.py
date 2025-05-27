@@ -251,7 +251,9 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"t.me/MyNewArtembot?start={user_data.get('referral_code')}"
         )
 
-        keyboard = [[InlineKeyboardButton("📤 Поділитися посиланням", url=f"https://t.me/MyNewArtembot?start={user_data.get('referral_code')}")]]
+        keyboard = [[
+            InlineKeyboardButton("📤 Поділитися посиланням", switch_inline_query=f"https://t.me/MyNewArtembot?start={user_data.get('referral_code')}")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(stats_text, reply_markup=reply_markup)
