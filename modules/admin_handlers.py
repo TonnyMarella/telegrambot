@@ -200,47 +200,49 @@ async def handle_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("❌ Пошук скасовано")
         return
 
-    # Використовуємо оптимізовану функцію пошуку
-    user_data = find_user_by_id_or_phone(identifier)
+    # Отримуємо актуальні дані з БД
+    with Session() as session:
+        try:
+            user_id = int(identifier)
+            user = session.query(User).get(user_id) or session.query(User).filter_by(telegram_id=str(user_id)).first()
+        except ValueError:
+            # Це номер телефону
+            user = session.query(User).filter_by(phone_number=identifier).first()
 
-    if user_data:
-        # Отримуємо актуальний баланс з Redis
-        balance = get_user_balance(user_data['telegram_id']) or user_data.get('balance', 0)
-
-        # Отримуємо статистику з БД (тут кешування менш критично)
-        with Session() as session:
-            total_referrals = session.query(User).filter_by(referred_by=user_data['id']).count()
-            total_bonuses = session.query(ReferralBonus).filter_by(user_id=user_data['id']).count()
-            total_bonus_amount = session.query(ReferralBonus).filter_by(user_id=user_data['id']).with_entities(
+        if user:
+            # Отримуємо актуальну статистику з БД
+            total_referrals = session.query(User).filter_by(referred_by=user.id).count()
+            total_bonuses = session.query(ReferralBonus).filter_by(user_id=user.id).count()
+            total_bonus_amount = session.query(ReferralBonus).filter_by(user_id=user.id).with_entities(
                 func.sum(ReferralBonus.amount)).scalar() or 0
 
-        text = (
-            f"👤 ІНФОРМАЦІЯ ПРО КОРИСТУВАЧА\n\n"
-            f"🆔 ID: {user_data['id']}\n"
-            f"📱 Телефон: {user_data['phone_number']}\n"
-            f"💰 Баланс: {balance} грн\n"
-            f"🔗 Реферальний код: {user_data['referral_code']}\n"
-            f"📅 Дата реєстрації: {user_data.get('created_at', '')}\n"
-            f"👥 Запрошено рефералів: {total_referrals}\n"
-            f"🎁 Отримано бонусів: {total_bonuses}\n"
-            f"💵 Загальна сума бонусів: {total_bonus_amount} грн\n"
-            f"{'👑 Адміністратор' if user_data.get('is_admin') else ''}"
-        )
+            text = (
+                f"👤 ІНФОРМАЦІЯ ПРО КОРИСТУВАЧА\n\n"
+                f"🆔 ID: {user.id}\n"
+                f"📱 Телефон: {user.phone_number}\n"
+                f"💰 Баланс: {user.balance} грн\n"
+                f"🔗 Реферальний код: {user.referral_code}\n"
+                f"📅 Дата реєстрації: {user.created_at.strftime('%d.%m.%Y')}\n"
+                f"👥 Запрошено рефералів: {total_referrals}\n"
+                f"🎁 Отримано бонусів: {total_bonuses}\n"
+                f"💵 Загальна сума бонусів: {total_bonus_amount} грн\n"
+                f"{'👑 Адміністратор' if user.is_admin else ''}"
+            )
 
-        keyboard = [
-            [InlineKeyboardButton("💰 Нарахувати бонус", callback_data=f'bonus_user_{user_data["id"]}')],
-            [InlineKeyboardButton("📊 Історія нарахувань", callback_data=f'bonus_history_{user_data["id"]}')],
-            [InlineKeyboardButton("🔍 Пошук іншого", callback_data='admin_users_search')],
-            [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+            keyboard = [
+                [InlineKeyboardButton("💰 Нарахувати бонус", callback_data=f'bonus_user_{user.id}')],
+                [InlineKeyboardButton("📊 Історія нарахувань", callback_data=f'bonus_history_{user.id}')],
+                [InlineKeyboardButton("🔍 Пошук іншого", callback_data='admin_users_search')],
+                [InlineKeyboardButton("◀️ Назад", callback_data='admin_users')]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await update.message.reply_text(text, reply_markup=reply_markup)
-    else:
-        await update.message.reply_text(
-            "❌ Користувача не знайдено.\n"
-            "Спробуйте ще раз або напишіть 'вийти' для скасування:"
-        )
+            await update.message.reply_text(text, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(
+                "❌ Користувача не знайдено.\n"
+                "Спробуйте ще раз або напишіть 'вийти' для скасування:"
+            )
 
     context.user_data.pop('waiting_for_user_search', None)
 
