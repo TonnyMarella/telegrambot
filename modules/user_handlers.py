@@ -55,20 +55,12 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if referral_code:
             # Спочатку перевіряємо в Redis
-            referrer_id = get_referral_user_id(referral_code)
-            if referrer_id:
-                referred_by = int(referrer_id)
-            else:
-                # Якщо немає в Redis, шукаємо в базі даних
-                referrer = session.query(User).filter_by(referral_code=referral_code).first()
-                if referrer:
-                    referred_by = referrer.id
-                    # Зберігаємо в Redis для майбутнього використання
-                    set_referral_code(referral_code, str(referrer.id))
+            referrer = session.query(User).filter_by(referral_code=referral_code).first()
+            if referrer:
+                referred_by = referrer.id
+                # Зберігаємо в Redis для майбутнього використання
+                set_referral_code(referral_code, str(referrer.id))
 
-            if referred_by:
-                # Нараховуємо бонус запрошувачу
-                referrer = session.query(User).get(referred_by)
                 referrer.balance += 800
                 bonus = ReferralBonus(
                     user_id=referrer.id,
@@ -140,13 +132,23 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clear_users_list_cache()
 
         # Відправляємо повідомлення про успішну реєстрацію
-        await update.message.reply_text(
-            "✅ Реєстрація успішна!\n\n"
-            "Тепер ви можете:\n"
-            "├── Запрошувати друзів\n"
-            "├── Отримувати бонуси\n"
-            "└── Використовувати всі можливості бота"
-        )
+        if referrer:
+            await update.message.reply_text(
+                "✅ Реєстрація успішна!\n\n"
+                "Ваш друг отримав бонус 800 грн!\n"
+                "Тепер ви можете:\n"
+                "├── Запрошувати друзів\n"
+                "├── Отримувати бонуси\n"
+                "└── Використовувати всі можливості бота"
+            )
+        else:
+            await update.message.reply_text(
+                "✅ Реєстрація успішна!\n\n"
+                "Тепер ви можете:\n"
+                "├── Запрошувати друзів\n"
+                "├── Отримувати бонуси\n"
+                "└── Використовувати всі можливості бота"
+            )
 
         # Відправляємо повідомлення запрошувачу про нарахування бонусу
         if referred_by:
@@ -198,62 +200,56 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Показати статистику користувача"""
     user_id = str(update.effective_user.id)
     
-    # Спочатку перевіряємо дані в Redis
-    user_data = get_user_data(user_id)
-    
     with Session() as session:
-        if not user_data:
-            # Якщо даних немає в Redis, беремо з бази даних
-            user = session.query(User).filter_by(telegram_id=user_id).first()
-            if user:
-                # Зберігаємо дані в Redis
-                user_data = {
-                    'telegram_id': user_id,
-                    'phone_number': user.phone_number,
-                    'referral_code': user.referral_code,
-                    'referred_by': user.referred_by,
-                    'balance': user.balance,
-                    'is_admin': user.is_admin
-                }
-                set_user_data(user_id, user_data)
-            else:
-                await update.message.reply_text("Спочатку потрібно зареєструватися!")
-                return
+        # Спочатку беремо дані з бази
+        user = session.query(User).filter_by(telegram_id=user_id).first()
+        if not user:
+            await update.message.reply_text("Спочатку потрібно зареєструватися!")
+            return
 
         # Отримання статистики рефералів
-        first_level = session.query(User).filter_by(referred_by=user_data.get('id')).count()
+        first_level = session.query(User).filter_by(referred_by=user.id).count()
         second_level = session.query(User).filter(
             User.referred_by.in_(
-                session.query(User.id).filter_by(referred_by=user_data.get('id'))
+                session.query(User.id).filter_by(referred_by=user.id)
             )
         ).count()
         third_level = session.query(User).filter(
             User.referred_by.in_(
                 session.query(User.id).filter(
                     User.referred_by.in_(
-                        session.query(User.id).filter_by(referred_by=user_data.get('id'))
+                        session.query(User.id).filter_by(referred_by=user.id)
                     )
                 )
             )
         ).count()
 
-        # Отримуємо баланс з Redis
-        balance = get_user_balance(user_id)
+        # Оновлюємо дані в Redis
+        user_data = {
+            'id': user.id,
+            'telegram_id': user_id,
+            'phone_number': user.phone_number,
+            'referral_code': user.referral_code,
+            'referred_by': user.referred_by,
+            'balance': user.balance,
+            'is_admin': user.is_admin
+        }
+        set_user_data(user_id, user_data)
 
         stats_text = (
             f"📊 ВАША СТАТИСТИКА\n"
-            f"💰 Поточний баланс: {balance} грн\n\n"
+            f"💰 Поточний баланс: {user.balance} грн\n\n"
             f"👥 ВАШІ РЕФЕРАЛИ:\n"
             f"├── 1-й рівень: {first_level} осіб ({first_level * 800} грн)\n"
             f"├── 2-й рівень: {second_level} осіб ({second_level * 400} грн)\n"
             f"└── 3-й рівень: {third_level} осіб ({third_level * 200} грн)\n\n"
             f"🔗 Ваше посилання:\n"
-            f"t.me/MyNewArtembot?start={user_data.get('referral_code')}"
+            f"t.me/MyNewArtembot?start={user.referral_code}"
         )
 
         keyboard = [[
-            InlineKeyboardButton("📤 Поділитися посиланням", switch_inline_query=f"https://t.me/MyNewArtembot?start={user_data.get('referral_code')}")]
-        ]
+            InlineKeyboardButton("📤 Поділитися посиланням", switch_inline_query=f"https://t.me/MyNewArtembot?start={user.referral_code}")
+        ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         await update.message.reply_text(stats_text, reply_markup=reply_markup)

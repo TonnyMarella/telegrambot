@@ -61,41 +61,25 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def get_users_from_cache_or_db(limit=10, offset=0):
     """Отримати користувачів з Redis або БД"""
-    # Спочатку перевіряємо кеш списку користувачів
-    cached_users = get_users_list(offset, limit)
-    if cached_users:
-        return cached_users
-
-    # Якщо немає в кеші - отримуємо з БД
+    # Спочатку отримуємо з БД
     with Session() as session:
         users = session.query(User).offset(offset).limit(limit).all()
         users_data = []
 
         for user in users:
-            # Перевіряємо чи є дані користувача в Redis
-            user_data = get_user_data(str(user.telegram_id))
-            if not user_data:
-                # Зберігаємо дані в Redis
-                user_data = {
-                    'id': user.id,  # Додаємо ID користувача
-                    'telegram_id': str(user.telegram_id),
-                    'phone_number': user.phone_number,
-                    'referral_code': user.referral_code,
-                    'referred_by': user.referred_by,
-                    'balance': user.balance,
-                    'is_admin': user.is_admin,
-                    'created_at': user.created_at.strftime('%d.%m.%Y')
-                }
-                set_user_data(str(user.telegram_id), user_data)
-            else:
-                # Якщо дані є в Redis, але немає ID - оновлюємо їх
-                if 'id' not in user_data:
-                    user_data['id'] = user.id
-                    set_user_data(str(user.telegram_id), user_data)
-
-            # Отримуємо актуальний баланс з Redis
-            balance = get_user_balance(str(user.telegram_id)) or user.balance
-            user_data['balance'] = balance
+            # Отримуємо актуальні дані з БД
+            user_data = {
+                'id': user.id,
+                'telegram_id': str(user.telegram_id),
+                'phone_number': user.phone_number,
+                'referral_code': user.referral_code,
+                'referred_by': user.referred_by,
+                'balance': user.balance,
+                'is_admin': user.is_admin,
+                'created_at': user.created_at.strftime('%d.%m.%Y')
+            }
+            # Оновлюємо кеш в Redis
+            set_user_data(str(user.telegram_id), user_data)
             users_data.append(user_data)
 
         # Зберігаємо список в кеш на 5 хвилин
@@ -122,11 +106,11 @@ async def show_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показ списку всіх користувачів - оптимізовано з Redis"""
+    """Показ списку всіх користувачів"""
     if not is_admin(update.effective_user.id):
         return
 
-    # Отримуємо користувачів з кеша або БД
+    # Отримуємо користувачів з БД
     users_data = get_users_from_cache_or_db(limit=10)
 
     text = "👥 СПИСОК КОРИСТУВАЧІВ:\n\n"
@@ -134,13 +118,10 @@ async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if users_data:
         for user_data in users_data:
             admin_mark = " 👑" if user_data.get('is_admin') else ""
-            # Отримуємо актуальний баланс з Redis
-            balance = get_user_balance(user_data['telegram_id']) or user_data.get('balance', 0)
-
             text += (
                 f"ID: {user_data['id']}{admin_mark}\n"
                 f"📱 {user_data['phone_number']}\n"
-                f"💰 Баланс: {balance} грн\n"
+                f"💰 Баланс: {user_data['balance']} грн\n"
                 f"🔗 Код: {user_data['referral_code']}\n"
                 f"📅 {user_data.get('created_at', '')}\n"
                 "─────────────────\n"
@@ -161,17 +142,7 @@ async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def find_user_by_id_or_phone(identifier):
-    """Пошук користувача за ID або телефоном - Redis first"""
-    # Спочатку пробуємо знайти в Redis якщо це telegram_id
-    try:
-        user_id = int(identifier)
-        user_data = get_user_data(str(user_id))
-        if user_data:
-            return user_data
-    except ValueError:
-        pass
-
-    # Якщо не знайдено в Redis або це номер телефону - шукаємо в БД
+    """Пошук користувача за ID або телефоном"""
     with Session() as session:
         try:
             user_id = int(identifier)
@@ -181,7 +152,7 @@ def find_user_by_id_or_phone(identifier):
             user = session.query(User).filter_by(phone_number=identifier).first()
 
         if user:
-            # Зберігаємо в Redis
+            # Отримуємо актуальні дані з БД
             user_data = {
                 'id': user.id,
                 'telegram_id': str(user.telegram_id),
@@ -192,6 +163,7 @@ def find_user_by_id_or_phone(identifier):
                 'is_admin': user.is_admin,
                 'created_at': user.created_at.strftime('%d.%m.%Y')
             }
+            # Оновлюємо кеш в Redis
             set_user_data(str(user.telegram_id), user_data)
             return user_data
 
@@ -420,112 +392,74 @@ async def handle_user_identifier(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def handle_bonus_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробник введення суми бонусу"""
+    """Обробка введеної суми бонусу"""
     if not is_admin(update.effective_user.id):
         return
 
-    if context.user_data.get('waiting_for_bonus_amount'):
-        amount = update.message.text.strip()
-
-        if amount.lower() in ['вийти', 'exit', 'cancel', 'скасувати']:
-            context.user_data.pop('waiting_for_bonus_amount', None)
-            context.user_data.pop('bonus_user_id', None)
-            context.user_data.pop('bonus_user_phone', None)
-            context.user_data.pop('bonus_user_telegram_id', None)
-            await update.message.reply_text("❌ Операцію скасовано")
+    try:
+        amount = float(update.message.text)
+        if amount <= 0:
+            await update.message.reply_text("❌ Сума має бути більше 0!")
             return
 
-        try:
-            amount = float(amount)
-            if amount <= 0:
-                raise ValueError("Сума має бути більше 0")
+        context.user_data['bonus_amount'] = amount
+        await update.message.reply_text(
+            "Введіть опис для бонусу (наприклад: 'Бонус за активність'):"
+        )
+        context.user_data['waiting_for_bonus_description'] = True
 
-            context.user_data['bonus_amount'] = amount
-            await update.message.reply_text("Введіть опис нарахування:")
-            context.user_data['waiting_for_bonus_amount'] = False
-            context.user_data['waiting_for_bonus_description'] = True
-        except ValueError:
-            await update.message.reply_text(
-                "❌ Будь ласка, введіть коректну суму (тільки число більше 0)!\n"
-                "Або напишіть 'вийти' для скасування:"
-            )
+    except ValueError:
+        await update.message.reply_text("❌ Будь ласка, введіть коректну суму!")
 
 
 async def handle_bonus_description(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обробник введення опису бонусу - оптимізовано"""
+    """Обробка опису бонусу та нарахування"""
     if not is_admin(update.effective_user.id):
         return
 
-    if context.user_data.get('waiting_for_bonus_description'):
-        description = update.message.text.strip()
+    user_id = context.user_data.get('selected_user_id')
+    amount = context.user_data.get('bonus_amount')
+    description = update.message.text
 
-        if description.lower() in ['вийти', 'exit', 'cancel', 'скасувати']:
-            context.user_data.pop('waiting_for_bonus_description', None)
-            context.user_data.pop('bonus_user_id', None)
-            context.user_data.pop('bonus_user_phone', None)
-            context.user_data.pop('bonus_user_telegram_id', None)
-            context.user_data.pop('bonus_amount', None)
-            await update.message.reply_text("❌ Операцію скасовано")
-            return
+    with Session() as session:
+        user = session.query(User).get(user_id)
+        if user:
+            # Нараховуємо бонус в базі даних
+            user.balance += amount
+            bonus = ReferralBonus(
+                user_id=user.id,
+                amount=amount,
+                description=description
+            )
+            session.add(bonus)
+            session.commit()
 
-        user_id = context.user_data['bonus_user_id']
-        amount = context.user_data['bonus_amount']
-        telegram_id = context.user_data['bonus_user_telegram_id']
-        user_phone = context.user_data['bonus_user_phone']
+            # Оновлюємо баланс в Redis
+            increment_user_balance(str(user.telegram_id), amount)
 
-        # Отримуємо поточний баланс з Redis
-        current_balance = get_user_balance(telegram_id)
-        if current_balance is None:
-            # Якщо немає в Redis, отримуємо з БД
-            with Session() as session:
-                user = session.query(User).get(user_id)
-                current_balance = user.balance if user else 0
-
-        # Оновлюємо баланс в Redis
-        new_balance = float(current_balance) + float(amount)
-        increment_user_balance(telegram_id, amount)
-
-        # Оновлюємо БД
-        with Session() as session:
-            user = session.query(User).get(user_id)
-            if user:
-                user.balance = new_balance
-                bonus = ReferralBonus(
-                    user_id=user.id,
-                    amount=amount,
-                    description=description
+            # Відправляємо повідомлення користувачу
+            try:
+                await context.bot.send_message(
+                    chat_id=user.telegram_id,
+                    text=f"💰 Вам нараховано +{amount} грн!\n"
+                         f"💬 {description}"
                 )
-                session.add(bonus)
-                session.commit()
+            except Exception as e:
+                print(f"Помилка відправки повідомлення користувачу {user.telegram_id}: {str(e)}")
 
-                # Оновлюємо дані користувача в Redis
-                user_data = get_user_data(telegram_id)
-                if user_data:
-                    user_data['balance'] = new_balance
-                    set_user_data(telegram_id, user_data)
+            await update.message.reply_text(
+                f"✅ Бонус успішно нараховано!\n"
+                f"👤 Користувач: {user.phone_number}\n"
+                f"💰 Сума: {amount} грн\n"
+                f"💬 Опис: {description}"
+            )
+        else:
+            await update.message.reply_text("❌ Користувача не знайдено!")
 
-                await update.message.reply_text(
-                    f"✅ Нараховано {amount} грн користувачу {user_phone}\n"
-                    f"Новий баланс: {new_balance} грн"
-                )
-
-                # Відправляємо повідомлення користувачу
-                try:
-                    await context.bot.send_message(
-                        chat_id=telegram_id,
-                        text=f"💰 Вам нараховано +{amount} грн!\n"
-                             f"💬 Причина: {description}\n"
-                             f"💳 Ваш баланс: {new_balance} грн"
-                    )
-                except Exception as e:
-                    print(f"Помилка відправки повідомлення користувачу {telegram_id}: {str(e)}")
-
-        # Очищаємо дані контексту
-        context.user_data.pop('bonus_user_id', None)
-        context.user_data.pop('bonus_user_phone', None)
-        context.user_data.pop('bonus_user_telegram_id', None)
-        context.user_data.pop('bonus_amount', None)
-        context.user_data.pop('waiting_for_bonus_description', None)
+    # Очищаємо дані
+    context.user_data.pop('selected_user_id', None)
+    context.user_data.pop('bonus_amount', None)
+    context.user_data.pop('waiting_for_bonus_description', None)
 
 
 def get_tour_requests_from_cache_or_db():
