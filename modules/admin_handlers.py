@@ -225,7 +225,6 @@ async def handle_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 f"📅 Дата реєстрації: {user.created_at.strftime('%d.%m.%Y')}\n"
                 f"👥 Запрошено рефералів: {total_referrals}\n"
                 f"🎁 Отримано бонусів: {total_bonuses}\n"
-                f"💵 Загальна сума бонусів: {total_bonus_amount} грн\n"
                 f"{'👑 Адміністратор' if user.is_admin else ''}"
             )
 
@@ -299,7 +298,6 @@ async def show_users_statistics(update: Update, context: ContextTypes.DEFAULT_TY
         f"✅ Активних користувачів: {stats['active_users']}\n"
         f"👥 Запрошено рефералів: {stats['total_referrals']}\n"
         f"🎁 Нараховано бонусів: {stats['total_bonuses']}\n"
-        f"💵 Загальна сума бонусів: {stats['total_bonus_amount']:.2f} грн"
     )
 
     keyboard = [
@@ -1180,7 +1178,6 @@ async def show_user_referrals(update: Update, context: ContextTypes.DEFAULT_TYPE
         f"1️⃣ Рівень: {stats['level_1']} рефералів (Бонуси: {bonus_stats['level_1']} грн)\n"
         f"2️⃣ Рівень: {stats['level_2']} рефералів (Бонуси: {bonus_stats['level_2']} грн)\n"
         f"3️⃣ Рівень: {stats['level_3']} рефералів (Бонуси: {bonus_stats['level_3']} грн)\n"
-        f"💰 Загальна сума бонусів: {total_bonus_amount} грн\n\n"
     )
 
     # Отримуємо рефералів для кожного рівня
@@ -1238,7 +1235,6 @@ async def show_user_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📅 Дата реєстрації: {user.created_at.strftime('%d.%m.%Y')}\n"
             f"👥 Запрошено рефералів: {total_referrals}\n"
             f"🎁 Отримано бонусів: {total_bonuses}\n"
-            f"💵 Загальна сума бонусів: {total_bonus_amount} грн\n"
             f"{'👑 Адміністратор' if user.is_admin else ''}"
         )
 
