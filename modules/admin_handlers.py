@@ -998,7 +998,7 @@ def get_referral_bonus_stats(user_id: int):
         # Отримуємо бонуси для рефералів 1-го рівня
         first_level_bonuses = session.query(func.sum(ReferralBonus.amount)).filter(
             ReferralBonus.user_id == user_id,
-            ReferralBonus.amount == 800
+            ReferralBonus.amount == 100
         ).scalar() or 0
 
         # Отримуємо бонуси для рефералів 2-го рівня
