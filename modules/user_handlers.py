@@ -50,6 +50,7 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Перевіряємо чи є реферальний код
         referral_code = context.user_data.get('referral_code')
         referred_by = None
+        referrer = None
         second_level_referrer = None
         third_level_referrer = None
 
