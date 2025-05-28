@@ -19,6 +19,7 @@ from modules.admin_handlers import (
     show_tour_requests_menu, search_tour_request, handle_tour_search,
     show_user_referrals, show_user_info, handle_deduct_amount, handle_deduct_description
 )
+from single_bot import SingletonBot
 
 # Завантаження змінних середовища
 load_dotenv()
@@ -210,38 +211,52 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    """Запуск бота"""
-    application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).build()
+    """Запуск бота з захистом від повторного запуску"""
 
-    # Основні обробники
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(MessageHandler(filters.CONTACT, handle_phone))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    # Варіант 1: Використання file locking (рекомендований)
+    with SingletonBot('telegram_bot.lock'):
+        print("🚀 Запускаємо Telegram бота...")
 
-    # Обробники команд
-    application.add_handler(CommandHandler("stats", show_statistics))
-    application.add_handler(CommandHandler("tour", request_tour))
-    application.add_handler(CommandHandler("admin", admin_panel))
-    application.add_handler(CommandHandler("set_admin", set_admin))
-    application.add_handler(CommandHandler("remove_admin", remove_admin))
+        application = Application.builder().token(os.getenv('TELEGRAM_TOKEN')).build()
 
-    # Обробники callback-запитів
-    application.add_handler(CallbackQueryHandler(show_users_list, pattern='^admin_users_list$'))
-    application.add_handler(CallbackQueryHandler(search_user, pattern='^admin_users_search$'))
-    application.add_handler(CallbackQueryHandler(show_users, pattern='^admin_users$'))
-    application.add_handler(CallbackQueryHandler(show_users_for_bonus, pattern='^bonus_user_\d+$'))
-    application.add_handler(CallbackQueryHandler(show_users_for_bonus, pattern='^deduct_points_\d+$'))
-    application.add_handler(CallbackQueryHandler(show_bonus_history, pattern='^bonus_history_\d+$'))
-    application.add_handler(CallbackQueryHandler(show_tour_requests, pattern='^admin_tours_list$'))
-    application.add_handler(CallbackQueryHandler(search_tour_request, pattern='^admin_tours_search$'))
-    application.add_handler(CallbackQueryHandler(show_tour_requests_menu, pattern='^admin_tours$'))
-    application.add_handler(CallbackQueryHandler(show_tour_request_details, pattern='^tour_request_\d+$'))
-    application.add_handler(CallbackQueryHandler(complete_tour_request, pattern='^complete_request_\d+$'))
-    application.add_handler(CallbackQueryHandler(show_user_referrals, pattern='^show_referrals_\d+$'))
-    application.add_handler(CallbackQueryHandler(show_user_info, pattern='^user_info_\d+$'))
+        # Основні обробники
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(MessageHandler(filters.CONTACT, handle_phone))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # Запуск бота
-    application.run_polling()
+        # Обробники команд
+        application.add_handler(CommandHandler("stats", show_statistics))
+        application.add_handler(CommandHandler("tour", request_tour))
+        application.add_handler(CommandHandler("admin", admin_panel))
+        application.add_handler(CommandHandler("set_admin", set_admin))
+        application.add_handler(CommandHandler("remove_admin", remove_admin))
+
+        # Обробники callback-запитів
+        application.add_handler(CallbackQueryHandler(show_users_list, pattern='^admin_users_list$'))
+        application.add_handler(CallbackQueryHandler(search_user, pattern='^admin_users_search$'))
+        application.add_handler(CallbackQueryHandler(show_users, pattern='^admin_users$'))
+        application.add_handler(CallbackQueryHandler(show_users_for_bonus, pattern='^bonus_user_\d+$'))
+        application.add_handler(CallbackQueryHandler(show_users_for_bonus, pattern='^deduct_points_\d+$'))
+        application.add_handler(CallbackQueryHandler(show_bonus_history, pattern='^bonus_history_\d+$'))
+        application.add_handler(CallbackQueryHandler(show_tour_requests, pattern='^admin_tours_list$'))
+        application.add_handler(CallbackQueryHandler(search_tour_request, pattern='^admin_tours_search$'))
+        application.add_handler(CallbackQueryHandler(show_tour_requests_menu, pattern='^admin_tours$'))
+        application.add_handler(CallbackQueryHandler(show_tour_request_details, pattern='^tour_request_\d+$'))
+        application.add_handler(CallbackQueryHandler(complete_tour_request, pattern='^complete_request_\d+$'))
+        application.add_handler(CallbackQueryHandler(show_user_referrals, pattern='^show_referrals_\d+$'))
+        application.add_handler(CallbackQueryHandler(show_user_info, pattern='^user_info_\d+$'))
+
+        print("✅ Бот успішно запущений!")
+
+        try:
+            # Запуск бота
+            application.run_polling()
+        except KeyboardInterrupt:
+            print("\n🛑 Отримано сигнал переривання. Зупиняємо бота...")
+        except Exception as e:
+            print(f"❌ Помилка при роботі бота: {e}")
+        finally:
+            print("👋 Бот завершив роботу")
 
 
 if __name__ == '__main__':
