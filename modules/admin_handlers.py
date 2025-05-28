@@ -148,8 +148,9 @@ def find_user_by_id_or_phone(identifier):
             user_id = int(identifier)
             user = session.query(User).get(user_id) or session.query(User).filter_by(telegram_id=str(user_id)).first()
         except ValueError:
-            # Це номер телефону
-            user = session.query(User).filter_by(phone_number=identifier).first()
+            pass
+        if not user:
+            user = session.query(User).filter_by(phone_number=str(user_id)).first()
 
         if user:
             # Отримуємо актуальні дані з БД
@@ -206,15 +207,14 @@ async def handle_user_search(update: Update, context: ContextTypes.DEFAULT_TYPE)
             user_id = int(identifier)
             user = session.query(User).get(user_id) or session.query(User).filter_by(telegram_id=str(user_id)).first()
         except ValueError:
-            # Це номер телефону
-            user = session.query(User).filter_by(phone_number=identifier).first()
+            pass
+        if not user:
+            user = session.query(User).filter_by(phone_number=str(user_id)).first()
 
         if user:
             # Отримуємо актуальну статистику з БД
             total_referrals = session.query(User).filter_by(referred_by=user.id).count()
             total_bonuses = session.query(ReferralBonus).filter_by(user_id=user.id).count()
-            total_bonus_amount = session.query(ReferralBonus).filter_by(user_id=user.id).with_entities(
-                func.sum(ReferralBonus.amount)).scalar() or 0
 
             text = (
                 f"👤 ІНФОРМАЦІЯ ПРО КОРИСТУВАЧА\n\n"
@@ -971,10 +971,12 @@ async def set_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Спробуємо знайти користувача за ID або телефоном
             try:
                 user_id = int(identifier)
-                user = session.query(User).get(user_id) or session.query(User).filter_by(telegram_id=str(user_id)).first()
+                user = session.query(User).get(user_id) or session.query(User).filter_by(
+                    telegram_id=str(user_id)).first()
             except ValueError:
-                # Якщо не ID, то шукаємо за телефоном
-                user = session.query(User).filter_by(phone_number=identifier).first()
+                pass
+            if not user:
+                user = session.query(User).filter_by(phone_number=str(user_id)).first()
 
             if user:
                 user.is_admin = True
@@ -1036,10 +1038,12 @@ async def remove_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Спробуємо знайти користувача за ID або телефоном
             try:
                 user_id = int(identifier)
-                user = session.query(User).get(user_id) or session.query(User).filter_by(telegram_id=str(user_id)).first()
+                user = session.query(User).get(user_id) or session.query(User).filter_by(
+                    telegram_id=str(user_id)).first()
             except ValueError:
-                # Якщо не ID, то шукаємо за телефоном
-                user = session.query(User).filter_by(phone_number=identifier).first()
+                pass
+            if not user:
+                user = session.query(User).filter_by(phone_number=str(user_id)).first()
 
             if user and user.is_admin:
                 user.is_admin = False
