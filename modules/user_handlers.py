@@ -76,30 +76,30 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     second_level_referrer = session.query(User).get(referrer.referred_by)
                     if second_level_referrer:
                         # Нараховуємо бонус користувачу другого рівня
-                        second_level_referrer.balance += 400
+                        second_level_referrer.balance += 50
                         bonus = ReferralBonus(
                             user_id=second_level_referrer.id,
-                            amount=400,
+                            amount=50,
                             description=f"Бонус за запрошення користувача {phone_number} (2-й рівень)"
                         )
                         session.add(bonus)
                         # Оновлюємо баланс в Redis
-                        increment_user_balance(str(second_level_referrer.telegram_id), 400)
+                        increment_user_balance(str(second_level_referrer.telegram_id), 50)
 
                         # Перевіряємо чи є у користувача другого рівня свій запрошувач (третій рівень)
                         if second_level_referrer.referred_by:
                             third_level_referrer = session.query(User).get(second_level_referrer.referred_by)
                             if third_level_referrer:
                                 # Нараховуємо бонус користувачу третього рівня
-                                third_level_referrer.balance += 200
+                                third_level_referrer.balance += 50
                                 bonus = ReferralBonus(
                                     user_id=third_level_referrer.id,
-                                    amount=200,
+                                    amount=50,
                                     description=f"Бонус за запрошення користувача {phone_number} (3-й рівень)"
                                 )
                                 session.add(bonus)
                                 # Оновлюємо баланс в Redis
-                                increment_user_balance(str(third_level_referrer.telegram_id), 200)
+                                increment_user_balance(str(third_level_referrer.telegram_id), 50)
 
         # Генеруємо реферальний код для нового користувача
         new_referral_code = generate_referral_code()
@@ -167,7 +167,7 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     chat_id=second_level_referrer.telegram_id,
-                    text=f"💰 Вам нараховано +400 грн!\n"
+                    text=f"💰 Вам нараховано +50 грн!\n"
                          f"💬 За запрошення користувача {phone_number} (2-й рівень)"
                 )
             except Exception as e:
@@ -178,7 +178,7 @@ async def handle_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     chat_id=third_level_referrer.telegram_id,
-                    text=f"💰 Вам нараховано +200 грн!\n"
+                    text=f"💰 Вам нараховано +50 грн!\n"
                          f"💬 За запрошення користувача {phone_number} (3-й рівень)"
                 )
             except Exception as e:
