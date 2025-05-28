@@ -253,7 +253,7 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        await update.message.reply_text(stats_text, reply_markup=reply_markup)
+        await update.message.reply_text(stats_text, reply_markup=reply_markup, parse_mode='Markdown', disable_web_page_preview=True)
 
 
 async def request_tour(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -352,15 +352,15 @@ async def handle_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, t
     elif text == "🔗 Моє посилання":
         await update.message.reply_text(
             f"🔗 Ваше реферальне посилання:\n"
-            f"t.me/MyNewArtembot?start={user.referral_code}"
+            f"t.me/MyNewArtembot?start={user.referral_code}",
+            parse_mode='Markdown',
+            disable_web_page_preview=True
         )
     elif text == "🛠 Адмін панель":
         # Перевіряємо чи користувач адмін
         with Session() as session:
             current_user = session.query(User).filter_by(telegram_id=user.telegram_id).first()
-            if current_user and current_user.is_admin:
-                await admin_panel(update, context)
-            else:
+            if current_user and not current_user.is_admin:
                 await update.message.reply_text("❌ У вас немає доступу до адмін-панелі!")
     elif context.user_data.get('waiting_for_tour_request'):
         await handle_tour_request(update, context)
