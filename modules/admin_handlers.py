@@ -556,6 +556,11 @@ async def handle_deduct_description(update: Update, context: ContextTypes.DEFAUL
         if user:
             # Перевіряємо чи достатньо коштів
             if user.balance < amount:
+                context.user_data.pop('waiting_for_deduct_description', None)
+                context.user_data.pop('deduct_user_id', None)
+                context.user_data.pop('deduct_user_phone', None)
+                context.user_data.pop('deduct_user_telegram_id', None)
+                context.user_data.pop('deduct_amount', None)
                 await update.message.reply_text("❌ У користувача недостатньо коштів!")
                 return
 
