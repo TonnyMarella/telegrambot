@@ -127,7 +127,9 @@ async def handle_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, t
     elif text == "🔗 Моє посилання":
         await update.message.reply_text(
             f"🔗 Ваше реферальне посилання:\n"
-            f"t.me/MyNewArtembot?start={user.referral_code}"
+            f"t.me/MyNewArtembot?start={user.referral_code}",
+            parse_mode='Markdown',
+            disable_web_page_preview=True
         )
     elif text == "🛠 Адмін панель":
         # Перевіряємо чи користувач адмін
