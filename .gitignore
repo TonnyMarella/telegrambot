@@ -1,0 +1,6 @@
+# Ignore all .idea files except for some useful ones
+.idea/*
+!.idea/codeStyles
+!.idea/inspectionProfiles
+!.idea/fileTemplates
+!.idea/.name
