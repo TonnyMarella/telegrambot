@@ -245,11 +245,11 @@ async def show_statistics(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"├── 2-й рівень: {second_level} осіб ({second_level * 50} грн)\n"
             f"└── 3-й рівень: {third_level} осіб ({third_level * 25} грн)\n\n"
             f"🔗 Ваше посилання:\n"
-            f"t.me/MyNewArtembot?start={user.referral_code}"
+            f"t.me/TourWithUsBot.?start={user.referral_code}"
         )
 
         keyboard = [[
-            InlineKeyboardButton("📤 Поділитися посиланням", switch_inline_query=f"https://t.me/MyNewArtembot?start={user.referral_code}")
+            InlineKeyboardButton("📤 Поділитися посиланням", switch_inline_query=f"https://t.me/TourWithUsBot.?start={user.referral_code}")
         ]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -352,7 +352,7 @@ async def handle_user_text(update: Update, context: ContextTypes.DEFAULT_TYPE, t
     elif text == "🔗 Моє посилання":
         await update.message.reply_text(
             f"🔗 Ваше реферальне посилання:\n"
-            f"t.me/MyNewArtembot?start={user.referral_code}",
+            f"t.me/TourWithUsBot.?start={user.referral_code}",
             parse_mode='Markdown',
             disable_web_page_preview=True
         )
