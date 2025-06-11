@@ -7,7 +7,7 @@ from .redis_client import (
     get_user_data, get_tour_request_status,
     set_tour_request_status, set_tour_request_data, get_recent_requests,
     set_user_data, get_user_balance, increment_user_balance,
-    get_users_list, set_users_list, get_system_stats, set_system_stats,
+    get_system_stats, set_system_stats,
     clear_users_list_cache
 )
 
@@ -59,11 +59,11 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-def get_users_from_cache_or_db(limit=10, offset=0):
+def get_users_from_cache_or_db():
     """Отримати користувачів з Redis або БД"""
     # Спочатку отримуємо з БД
     with Session() as session:
-        users = session.query(User).offset(offset).limit(limit).all()
+        users = session.query(User).all()
         users_data = []
 
         for user in users:
@@ -83,7 +83,6 @@ def get_users_from_cache_or_db(limit=10, offset=0):
             users_data.append(user_data)
 
         # Зберігаємо список в кеш на 5 хвилин
-        set_users_list(offset, limit, users_data, 300)
         return users_data
 
 
@@ -111,7 +110,7 @@ async def show_users_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Отримуємо користувачів з БД
-    users_data = get_users_from_cache_or_db(limit=10)
+    users_data = get_users_from_cache_or_db()
 
     text = "👥 СПИСОК КОРИСТУВАЧІВ:\n\n"
 
@@ -610,7 +609,7 @@ def get_tour_requests_from_cache_or_db():
     with Session() as session:
         new_requests = session.query(TourRequest).filter_by(status='new').order_by(TourRequest.created_at.desc()).all()
         processed_requests = session.query(TourRequest).filter_by(status='end').order_by(
-            TourRequest.created_at.desc()).limit(5).all()
+            TourRequest.created_at.desc()).all()
 
         requests_data = {
             'new': [],
@@ -685,7 +684,7 @@ async def show_tour_requests(update: Update, context: ContextTypes.DEFAULT_TYPE)
         new_requests = session.query(TourRequest).filter_by(status='new').order_by(TourRequest.created_at.desc()).all()
 
         # Отримуємо оброблені заявки
-        processed_requests = session.query(TourRequest).filter_by(status='end').order_by(TourRequest.created_at.desc()).limit(5).all()
+        processed_requests = session.query(TourRequest).filter_by(status='end').order_by(TourRequest.created_at.desc()).all()
 
         text = "📋 ЗАЯВКИ НА ТУРИ\n\n"
 

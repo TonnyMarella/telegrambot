@@ -117,19 +117,6 @@ def clear_user_session(user_id: str):
     redis_client.delete(key)
 
 
-def get_users_list(offset: int = 0, limit: int = 10) -> list:
-    """Отримати список користувачів з Redis"""
-    key = f"users_list:{offset}:{limit}"
-    data = redis_client.get(key)
-    return json.loads(data) if data else None
-
-
-def set_users_list(offset: int, limit: int, users_data: list, expire_seconds: int = 300):
-    """Зберегти список користувачів в Redis"""
-    key = f"users_list:{offset}:{limit}"
-    redis_client.setex(key, expire_seconds, json.dumps(users_data))
-
-
 def clear_users_list_cache():
     """Очистити кеш списку користувачів"""
     pattern = "users_list:*"
