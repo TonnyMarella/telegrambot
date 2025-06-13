@@ -63,7 +63,7 @@ def get_users_from_cache_or_db():
     """Отримати користувачів з Redis або БД"""
     # Спочатку отримуємо з БД
     with Session() as session:
-        users = session.query(User).all()
+        users = session.query(User).order_by(User.id).all()
         users_data = []
 
         for user in users:
